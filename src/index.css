@@ -1,0 +1,176 @@
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --bg:       #0b0f1a;
+  --s1:       #141b2d;
+  --s2:       #1c2540;
+  --s3:       #232f4e;
+  --border:   #2e3d5c;
+  --border2:  #3d4f70;
+  --text:     #e8edf5;
+  --muted:    #64748b;
+  --muted2:   #94a3b8;
+  --accent:   #5b7cf6;
+  --accent-h: #4a6be5;
+  --green:    #22c55e;
+  --green-s:  #16a34a;
+  --orange:   #f97316;
+  --red:      #ef4444;
+  --yellow:   #eab308;
+}
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: 'DM Sans', sans-serif;
+  font-size: 14px;
+  height: 100vh;
+  overflow: hidden;
+}
+
+#root { height: 100vh; display: flex; flex-direction: column; }
+
+/* ── buttons ── */
+.btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+  padding: 9px 18px; border-radius: 7px; font-family: inherit; font-size: 14px;
+  font-weight: 500; cursor: pointer; border: none; transition: all 0.15s; white-space: nowrap;
+}
+.btn-primary   { background: var(--accent); color: white; }
+.btn-primary:hover { background: var(--accent-h); }
+.btn-ghost     { background: transparent; color: var(--text); border: 1px solid var(--border2); }
+.btn-ghost:hover { background: var(--s2); border-color: var(--border2); }
+.btn-green     { background: var(--green); color: white; }
+.btn-green:hover { background: var(--green-s); }
+.btn-danger    { background: var(--red); color: white; }
+.btn:disabled  { opacity: 0.4; cursor: not-allowed; }
+.btn-sm { padding: 6px 12px; font-size: 13px; }
+.btn-lg { padding: 12px 24px; font-size: 15px; font-weight: 600; }
+
+/* ── inputs ── */
+.input {
+  background: var(--s2); border: 1px solid var(--border); color: var(--text);
+  border-radius: 7px; padding: 9px 12px; font-family: inherit; font-size: 14px;
+  outline: none; width: 100%; transition: border-color 0.15s;
+}
+.input:focus { border-color: var(--accent); }
+.input::placeholder { color: var(--muted); }
+textarea.input { resize: none; line-height: 1.5; }
+
+/* ── voting cards ── */
+.vcard {
+  width: 54px; height: 76px; border-radius: 8px;
+  border: 2px solid var(--border2); background: #fff;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 22px; font-weight: 700; color: #0b0f1a;
+  cursor: pointer; transition: all 0.15s; flex-shrink: 0;
+  user-select: none;
+}
+.vcard:hover { transform: translateY(-4px); border-color: var(--accent); box-shadow: 0 8px 24px rgba(91,124,246,0.25); }
+.vcard.selected {
+  background: var(--accent); color: white; border-color: var(--accent);
+  transform: translateY(-6px); box-shadow: 0 10px 28px rgba(91,124,246,0.4);
+}
+.vcard-sm {
+  width: 36px; height: 50px; border-radius: 5px;
+  border: 1.5px solid; background: white; color: #0b0f1a;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 15px; font-weight: 700; flex-shrink: 0;
+}
+
+/* ── participant flip card ── */
+.pcard-wrap { perspective: 600px; width: 36px; height: 50px; }
+.pcard-inner {
+  width: 100%; height: 100%; position: relative;
+  transform-style: preserve-3d; transition: transform 0.45s ease;
+}
+.pcard-inner.flipped { transform: rotateY(180deg); }
+.pcard-face {
+  position: absolute; inset: 0; border-radius: 5px;
+  backface-visibility: hidden; -webkit-backface-visibility: hidden;
+  display: flex; align-items: center; justify-content: center;
+}
+.pcard-back-face {
+  background: var(--s3);
+  border: 1.5px solid var(--border2);
+  background-image: repeating-linear-gradient(45deg, transparent, transparent 4px, rgba(255,255,255,0.03) 4px, rgba(255,255,255,0.03) 8px);
+}
+.pcard-front-face {
+  background: white; color: #0b0f1a;
+  border: 1.5px solid #d1d5db;
+  font-size: 15px; font-weight: 700;
+  transform: rotateY(180deg);
+}
+.pcard-voted-check {
+  border: 1.5px solid var(--green); background: rgba(34,197,94,0.1);
+  font-size: 14px; color: var(--green);
+}
+
+/* ── sidebar story row ── */
+.story-row {
+  display: flex; align-items: center; gap: 8px; padding: 7px 10px;
+  border-radius: 6px; cursor: pointer; transition: background 0.1s;
+  border: 1px solid transparent;
+}
+.story-row:hover { background: var(--s2); }
+.story-row.active { background: var(--s2); border-color: var(--accent); }
+.story-row.done .story-title { color: var(--muted); text-decoration: line-through; }
+
+/* ── badge ── */
+.badge {
+  font-size: 11px; font-weight: 600; padding: 2px 7px; border-radius: 20px;
+  flex-shrink: 0;
+}
+.badge-green { background: rgba(34,197,94,0.15); color: var(--green); }
+.badge-accent { background: rgba(91,124,246,0.15); color: var(--accent); }
+.badge-muted { background: var(--s3); color: var(--muted2); }
+
+/* ── top bar ── */
+.topbar {
+  height: 48px; background: var(--s1); border-bottom: 1px solid var(--border);
+  display: flex; align-items: center; padding: 0 16px; gap: 12px; flex-shrink: 0;
+}
+.topbar-logo { font-weight: 700; font-size: 16px; color: var(--text); letter-spacing: -0.3px; }
+.topbar-logo span { color: var(--accent); }
+
+/* ── toggle ── */
+.toggle-wrap { display: flex; align-items: center; gap: 7px; cursor: pointer; }
+.toggle-track {
+  width: 32px; height: 18px; border-radius: 9px; background: var(--s3);
+  position: relative; transition: background 0.15s;
+}
+.toggle-track.on { background: var(--green); }
+.toggle-thumb {
+  width: 14px; height: 14px; border-radius: 50%; background: white;
+  position: absolute; top: 2px; left: 2px; transition: left 0.15s;
+}
+.toggle-track.on .toggle-thumb { left: 16px; }
+
+/* ── stats grid ── */
+.stat-box {
+  background: var(--s2); border: 1px solid var(--border); border-radius: 8px;
+  padding: 12px; text-align: center; flex: 1;
+}
+.stat-val { font-size: 22px; font-weight: 700; color: var(--text); line-height: 1.1; }
+.stat-label { font-size: 11px; color: var(--muted); margin-top: 3px; letter-spacing: 0.04em; }
+
+/* ── modal overlay ── */
+.modal-bg {
+  position: fixed; inset: 0; background: rgba(0,0,0,0.6); backdrop-filter: blur(2px);
+  display: flex; align-items: center; justify-content: center; z-index: 100;
+}
+.modal {
+  background: var(--s1); border: 1px solid var(--border); border-radius: 12px;
+  padding: 24px; width: 480px; max-height: 80vh; display: flex; flex-direction: column; gap: 16px;
+}
+
+/* ── scrollbar ── */
+::-webkit-scrollbar { width: 4px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 4px; }
+
+/* ── animations ── */
+@keyframes fadeUp { from { opacity:0; transform:translateY(12px); } to { opacity:1; transform:none; } }
+.fade-up { animation: fadeUp 0.3s ease forwards; }
+@keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.5} }
+.pulse { animation: pulse 1.5s ease infinite; }
