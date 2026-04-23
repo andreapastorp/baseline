@@ -381,16 +381,45 @@ function AddStoryModal({ onAdd, onClose, onSwitchToJira }) {
   )
 }
 
+/* ── Share Button ── */
+function ShareButton({ roomName }) {
+  const [copied, setCopied] = useState(false)
+  const handle = () => {
+    const url = `${window.location.origin}${window.location.pathname}?room=${encodeURIComponent(roomName)}`
+    navigator.clipboard.writeText(url).then(() => {
+      setCopied(true)
+      setTimeout(() => setCopied(false), 2000)
+    })
+  }
+  return (
+    <button className={`btn btn-sm ${copied ? 'btn-green' : 'btn-ghost'}`} onClick={handle}>
+      {copied ? '✓ Copied' : <><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg> Invite</>}
+    </button>
+  )
+}
+
 /* ── Top Bar ── */
-function TopBar({ roomName, isVoting, onToggleVoting }) {
+function TopBar({ roomName, isVoting, onToggleVoting, players }) {
+  const others = players.filter(p => p.id !== 'me')
   return (
     <div className="topbar">
-      <div className="topbar-room">{roomName}</div>
-      <Toggle on={isVoting} onChange={onToggleVoting} label={isVoting ? 'Voting' : 'Observing'} />
-      <div className="divider" />
-      <div className="user-chip">
-        <div className="user-avatar">A</div>
-        <span>Alex ★</span>
+      <div className="topbar-left">
+        <div className="topbar-room">{roomName}</div>
+        <div className="topbar-players">
+          {others.map((p, i) => (
+            <div key={p.id} className="topbar-avatar" style={{ zIndex: others.length - i }}>
+              {p.name[0].toUpperCase()}
+            </div>
+          ))}
+        </div>
+        <ShareButton roomName={roomName} />
+      </div>
+      <div className="topbar-right">
+        <Toggle on={!isVoting} onChange={v => onToggleVoting(!v)} label="Observer mode" />
+        <div className="user-chip">
+          <div className="user-avatar">A</div>
+          <span>Alex ★</span>
+        </div>
       </div>
     </div>
   )
@@ -579,7 +608,8 @@ function RoomView({ roomName, stories, setStories, startIdx = 0 }) {
 
   return (
     <>
-      <TopBar roomName={roomName} isVoting={isVoting} onToggleVoting={setIsVoting} />
+      <TopBar roomName={roomName} isVoting={isVoting} onToggleVoting={setIsVoting}
+        players={[{ id: 'me', name: 'Alex', role: 'voter', fac: true }, ...SIMULATED_PLAYERS]} />
       <div style={{ flex: 1, display: 'flex', overflow: 'hidden' }}>
         <StorySidebar stories={stories} currentIdx={currentIdx} isFacilitator
           onAdd={() => setShowAddModal(true)}
@@ -632,7 +662,15 @@ function RoomView({ roomName, stories, setStories, startIdx = 0 }) {
 }
 
 /* ── Landing view ── */
-function LandingView({ onCreateRoom }) {
+function LandingView({ onCreateRoom, onJoin }) {
+  const [joinInput, setJoinInput] = useState('')
+
+  const handleJoin = () => {
+    let room = joinInput.trim()
+    try { room = new URL(room).searchParams.get('room') || room } catch { /* not a URL */ }
+    if (room) onJoin(room)
+  }
+
   return (
     <div className="landing">
       <div className="landing-inner">
@@ -643,8 +681,10 @@ function LandingView({ onCreateRoom }) {
             Create Session
           </button>
           <div style={{ display: 'flex', gap: 8 }}>
-            <input className="input" placeholder="Paste invite link…" style={{ flex: 1 }} />
-            <button className="btn btn-ghost">Join</button>
+            <input className="input" placeholder="Paste invite link…" style={{ flex: 1 }}
+              value={joinInput} onChange={e => setJoinInput(e.target.value)}
+              onKeyDown={e => e.key === 'Enter' && joinInput.trim() && handleJoin()} />
+            <button className="btn btn-ghost" disabled={!joinInput.trim()} onClick={handleJoin}>Join</button>
           </div>
         </div>
       </div>
@@ -772,17 +812,26 @@ function AddStoriesView({ roomName, onStart }) {
 /* ── Root App ── */
 export default function App() {
   const saved = (() => { try { return JSON.parse(localStorage.getItem(LS_KEY) || '{}') } catch { return {} } })()
-  const [view, setView]         = useState(saved.view || 'landing')
-  const [roomName, setRoomName] = useState(saved.roomName || '')
-  const [stories, setStories]   = useState(saved.stories || [])
+
+  // If an invite link was used, jump straight to the room
+  const inviteRoom = new URLSearchParams(window.location.search).get('room')
+  const [view, setView]         = useState(inviteRoom ? 'room' : (saved.view || 'landing'))
+  const [roomName, setRoomName] = useState(inviteRoom || saved.roomName || '')
+  const [stories, setStories]   = useState(inviteRoom ? [] : (saved.stories || []))
 
   useEffect(() => {
     localStorage.setItem(LS_KEY, JSON.stringify({ view, roomName, stories }))
   }, [view, roomName, stories])
 
+  const handleJoin = (name) => {
+    setRoomName(name)
+    setStories([])
+    setView('room')
+  }
+
   return (
     <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-      {view === 'landing' && <LandingView onCreateRoom={() => setView('create')} />}
+      {view === 'landing' && <LandingView onCreateRoom={() => setView('create')} onJoin={handleJoin} />}
       {view === 'create'  && <CreateRoomView onNext={name => { setRoomName(name); setView('stories') }} />}
       {view === 'stories' && <AddStoriesView roomName={roomName} onStart={s => { setStories(s); setView('room') }} />}
       {view === 'room'    && (

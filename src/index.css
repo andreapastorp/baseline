@@ -115,15 +115,17 @@ textarea.input { resize: none; line-height: 1.5; }
 .topbar {
   height: 44px; background: var(--bg);
   border-bottom: 1px solid var(--border);
-  display: flex; align-items: center;
-  padding: 0 var(--space-lg); gap: var(--space-md);
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 0 var(--space-lg);
   flex-shrink: 0;
 }
+.topbar-left  { display: flex; align-items: center; gap: var(--space-sm); }
+.topbar-right { display: flex; align-items: center; gap: var(--space-sm); }
 .topbar-room {
   font-family: var(--font-display);
   font-size: 14px; font-weight: 700;
   letter-spacing: 0.08em; text-transform: uppercase;
-  color: var(--text); flex: 1;
+  color: var(--text);
 }
 
 /* ── Toggle ── */
@@ -141,6 +143,19 @@ textarea.input { resize: none; line-height: 1.5; }
 }
 .toggle-track.on .toggle-thumb { left: 14px; }
 .toggle-label { font-size: 12px; color: var(--muted2); }
+
+/* ── Topbar players ── */
+.topbar-players {
+  display: flex; align-items: center; gap: 0;
+}
+.topbar-avatar {
+  width: 22px; height: 22px; border-radius: 50%;
+  background: var(--s3); border: 1.5px solid var(--bg);
+  font-family: var(--font-display); font-size: 10px; font-weight: 700;
+  display: flex; align-items: center; justify-content: center;
+  color: var(--text2); margin-left: -5px; cursor: default;
+}
+.topbar-avatar:first-child { margin-left: 0; }
 
 /* ── User chip ── */
 .user-chip { display: flex; align-items: center; gap: var(--space-sm); font-size: 13px; color: var(--muted2); }
