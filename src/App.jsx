@@ -129,9 +129,12 @@ function StorySidebar({ stories, currentIdx, isFacilitator, onAdd, onJump }) {
     <div className="sidebar">
       <div className="sidebar-header">
         <span className="label">Stories</span>
-        {isFacilitator && (
-          <button className="btn btn-ghost btn-sm" onClick={onAdd}>+ Add</button>
-        )}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <span className="sidebar-progress">{currentIdx + 1}/{stories.length}</span>
+          {isFacilitator && (
+            <button className="btn btn-ghost btn-sm" onClick={onAdd}>+ Add</button>
+          )}
+        </div>
       </div>
       <div className="sidebar-list">
         {stories.map((s, i) => (
@@ -150,8 +153,10 @@ function StorySidebar({ stories, currentIdx, isFacilitator, onAdd, onJump }) {
 
 /* ── Active story card ── */
 function ActiveStoryCard({ story, num, total }) {
+  const ghost = num < 10 ? `0${num}` : `${num}`
   return (
     <div className="active-story">
+      <div className="active-story-ghost" aria-hidden="true">{ghost}</div>
       <div className="active-story-meta">Story {num} of {total}</div>
       <div className="active-story-title">{story.title}</div>
       {story.desc && <div className="active-story-desc">{story.desc}</div>}
@@ -193,11 +198,11 @@ function RevealStats({ votes, outlierName }) {
           <div className="stat-label">Average</div>
         </div>
         <div>
-          <div className="stat-val">{min}–{max}</div>
+          <div className="stat-val secondary">{min}–{max}</div>
           <div className="stat-label">Spread</div>
         </div>
         <div>
-          <div className="stat-val">{mode}</div>
+          <div className="stat-val secondary">{mode}</div>
           <div className="stat-label">Mode</div>
         </div>
       </div>
@@ -381,7 +386,7 @@ function BottomBar({ phase, myVote, simVotes, onReveal, onClear }) {
               {4 - votedCount} still voting…
             </span>
           )}
-          <button className="btn btn-primary" disabled={votedCount === 0} onClick={onReveal}>
+          <button className="btn btn-primary btn-lg" disabled={votedCount === 0} onClick={onReveal}>
             Reveal Votes →
           </button>
         </>
@@ -480,7 +485,10 @@ function RoomView({ roomName, stories, setStories, startIdx = 0 }) {
   if (phase === 'complete') {
     return (
       <div className="complete-view">
-        <div className="complete-heading">Session Complete</div>
+        <div style={{ textAlign: 'center' }}>
+          <div className="complete-count">{stories.length}</div>
+          <div className="complete-count-label">Stories estimated</div>
+        </div>
         <div className="complete-table">
           {stories.map((s, i) => (
             <div key={s.id} className="complete-row">
@@ -559,7 +567,7 @@ function LandingView({ onCreateRoom }) {
   return (
     <div className="landing">
       <div className="landing-inner">
-        <h1 className="landing-heading">Planning<br />Poker</h1>
+        <h1 className="landing-heading">Planning<br /><em>Poker</em></h1>
         <p className="landing-sub">Estimate stories as a team — focused, structured, decisive.</p>
         <div className="landing-actions">
           <button className="btn btn-primary btn-lg" style={{ width: '100%' }} onClick={onCreateRoom}>
