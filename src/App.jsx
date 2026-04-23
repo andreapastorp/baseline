@@ -26,7 +26,7 @@ function Toggle({ on, onChange, label }) {
       <div className={`toggle-track ${on ? 'on' : ''}`}>
         <div className="toggle-thumb" />
       </div>
-      {label && <span style={{ fontSize: 13, color: 'var(--muted2)' }}>{label}</span>}
+      {label && <span className="toggle-label">{label}</span>}
     </div>
   )
 }
@@ -62,38 +62,44 @@ function ParticipantsRow({ myVote, simVotes, revealed }) {
   const votedCount = [myVote !== null, !!simVotes.p1, !!simVotes.p2, !!simVotes.p3].filter(Boolean).length
 
   return (
-    <div style={{ padding: '12px 20px', borderBottom: '1px solid var(--border)', flexShrink: 0 }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
-        <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--muted)', letterSpacing: '0.06em' }}>PARTICIPANTS</span>
+    <div className="participants">
+      <div className="participants-header">
+        <span className="label">Participants</span>
         {!revealed
           ? <span style={{ fontSize: 12, color: 'var(--muted2)' }}>{votedCount} / 4 voted</span>
           : <span style={{ fontSize: 12, color: 'var(--green)', fontWeight: 500 }}>Votes revealed</span>
         }
       </div>
-      <div style={{ display: 'flex', gap: 16, alignItems: 'flex-end' }}>
+      <div style={{ display: 'flex', gap: 24, alignItems: 'flex-end' }}>
         {all.map((p, i) => {
           const isMe = p.id === 'me'
           const voted = isMe ? myVote !== null : !!simVotes[p.id]
           const val   = isMe ? myVote : simVotes[p.id]
           return (
-            <div key={p.id} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6,
-              opacity: p.role === 'observer' ? 0.45 : 1 }}>
+            <div key={p.id} className="participant-col"
+              style={{ opacity: p.role === 'observer' ? 0.4 : 1 }}>
               {p.role === 'voter'
                 ? <PCard voted={voted} value={val} revealed={revealed} delay={i * 120} />
-                : <div style={{ width: 36, height: 50, borderRadius: 5, border: '1.5px solid var(--border)',
-                    background: 'var(--s2)', display: 'flex', alignItems: 'center', justifyContent: 'center',
-                    fontSize: 10, color: 'var(--muted)' }}>obs</div>
+                : <div style={{
+                    width: 40, height: 56,
+                    border: '1px solid var(--border)',
+                    background: 'var(--s2)',
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    fontFamily: 'var(--font-display)', fontSize: 9, fontWeight: 600,
+                    letterSpacing: '0.06em', color: 'var(--muted)',
+                    textTransform: 'uppercase',
+                  }}>obs</div>
               }
-              <span style={{ fontSize: 11, color: isMe ? 'var(--accent)' : 'var(--muted2)' }}>
+              <span className={`participant-name ${isMe ? 'is-me' : ''}`}>
                 {p.name}{p.fac ? ' ★' : ''}
               </span>
             </div>
           )
         })}
         {!revealed && (
-          <div style={{ marginLeft: 'auto', display: 'flex', gap: 4, alignSelf: 'center' }}>
+          <div className="vote-dots" style={{ marginLeft: 'auto', alignSelf: 'center' }}>
             {[myVote !== null, !!simVotes.p1, !!simVotes.p2, !!simVotes.p3].map((v, i) => (
-              <div key={i} style={{ width: 24, height: 4, borderRadius: 2, background: v ? 'var(--green)' : 'var(--border)' }} />
+              <div key={i} className={`vote-dot ${v ? 'voted' : 'waiting'}`} />
             ))}
           </div>
         )}
@@ -106,14 +112,13 @@ function ParticipantsRow({ myVote, simVotes, revealed }) {
 function StoryRow({ story, active, onClick }) {
   return (
     <div className={`story-row ${active ? 'active' : ''} ${story.points !== null ? 'done' : ''}`} onClick={onClick}>
-      <span style={{ fontSize: 11, color: 'var(--muted)', width: 20, flexShrink: 0 }}>#{story.num}</span>
-      <span className="story-title" style={{ flex: 1, fontSize: 13, lineHeight: 1.3, overflow: 'hidden',
-        display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical' }}>{story.title}</span>
+      <span className="story-row-num">{story.num}</span>
+      <span className="story-title">{story.title}</span>
       {story.points !== null
-        ? <span className="badge badge-green">{story.points}</span>
+        ? <span className="story-pts">{story.points}</span>
         : active
-          ? <span className="badge badge-accent">→</span>
-          : <span style={{ width: 20 }} />}
+          ? <span className="story-arrow">▶</span>
+          : null}
     </div>
   )
 }
@@ -121,24 +126,23 @@ function StoryRow({ story, active, onClick }) {
 /* ── Story sidebar ── */
 function StorySidebar({ stories, currentIdx, isFacilitator, onAdd, onJump }) {
   return (
-    <div style={{ width: 210, borderRight: '1px solid var(--border)', background: 'var(--s1)',
-      display: 'flex', flexDirection: 'column', overflow: 'hidden', flexShrink: 0 }}>
-      <div style={{ padding: '12px 12px 8px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--muted)', letterSpacing: '0.06em' }}>STORIES</span>
+    <div className="sidebar">
+      <div className="sidebar-header">
+        <span className="label">Stories</span>
         {isFacilitator && (
-          <button className="btn btn-ghost btn-sm" style={{ padding: '3px 8px', fontSize: 11 }} onClick={onAdd}>
-            + Add / Import
-          </button>
+          <button className="btn btn-ghost btn-sm" onClick={onAdd}>+ Add</button>
         )}
       </div>
-      <div style={{ flex: 1, overflow: 'auto', padding: '0 8px 8px' }}>
+      <div className="sidebar-list">
         {stories.map((s, i) => (
           <StoryRow key={s.id} story={{ ...s, num: i + 1 }} active={i === currentIdx}
             onClick={() => onJump && onJump(i)} />
         ))}
       </div>
-      <div style={{ padding: '10px 14px', borderTop: '1px solid var(--border)', fontSize: 12, color: 'var(--muted)' }}>
-        {stories.filter(s => s.points !== null).length} done · {stories.filter(s => s.points === null).length} remaining
+      <div className="sidebar-footer">
+        {stories.filter(s => s.points !== null).length} done
+        {' · '}
+        {stories.filter(s => s.points === null).length} remaining
       </div>
     </div>
   )
@@ -147,12 +151,10 @@ function StorySidebar({ stories, currentIdx, isFacilitator, onAdd, onJump }) {
 /* ── Active story card ── */
 function ActiveStoryCard({ story, num, total }) {
   return (
-    <div style={{ padding: '16px 20px', borderBottom: '1px solid var(--border)', flexShrink: 0 }}>
-      <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--muted)', letterSpacing: '0.06em', marginBottom: 6 }}>
-        STORY {num} OF {total}
-      </div>
-      <div style={{ fontSize: 16, fontWeight: 600, color: 'var(--text)', lineHeight: 1.4, marginBottom: 4 }}>{story.title}</div>
-      {story.desc && <div style={{ fontSize: 13, color: 'var(--muted2)', lineHeight: 1.5 }}>{story.desc}</div>}
+    <div className="active-story">
+      <div className="active-story-meta">Story {num} of {total}</div>
+      <div className="active-story-title">{story.title}</div>
+      {story.desc && <div className="active-story-desc">{story.desc}</div>}
     </div>
   )
 }
@@ -160,11 +162,9 @@ function ActiveStoryCard({ story, num, total }) {
 /* ── Voting cards grid ── */
 function VotingCards({ selected, onSelect }) {
   return (
-    <div style={{ padding: '16px 20px' }}>
-      <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--muted)', letterSpacing: '0.06em', marginBottom: 12 }}>
-        YOUR ESTIMATE
-      </div>
-      <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+    <div className="voting-section">
+      <span className="label">Your Estimate</span>
+      <div className="vote-grid">
         {FIBS.map(v => (
           <div key={v} className={`vcard ${selected === v ? 'selected' : ''}`} onClick={() => onSelect(v)}>
             {v}
@@ -186,20 +186,25 @@ function RevealStats({ votes, outlierName }) {
   const mode = nums.length ? +Object.entries(freq).sort((a, b) => b[1] - a[1])[0][0] : '–'
 
   return (
-    <div style={{ padding: '12px 20px 0', flexShrink: 0 }}>
-      <div style={{ display: 'flex', gap: 8, marginBottom: outlierName ? 10 : 0 }}>
-        {[['AVG', avg], ['SPREAD', `${min}–${max}`], ['MODE', `${mode}`]].map(([k, v]) => (
-          <div key={k} className="stat-box">
-            <div className="stat-val">{v}</div>
-            <div className="stat-label">{k}</div>
-          </div>
-        ))}
+    <div className="reveal-section">
+      <div className="stat-row">
+        <div>
+          <div className="stat-val primary">{avg}</div>
+          <div className="stat-label">Average</div>
+        </div>
+        <div>
+          <div className="stat-val">{min}–{max}</div>
+          <div className="stat-label">Spread</div>
+        </div>
+        <div>
+          <div className="stat-val">{mode}</div>
+          <div className="stat-label">Mode</div>
+        </div>
       </div>
       {outlierName && (
-        <div style={{ background: 'rgba(234,179,8,0.08)', border: '1px solid rgba(234,179,8,0.25)',
-          borderRadius: 7, padding: '8px 12px', fontSize: 13, color: '#d4b106', marginBottom: 12 }}>
-          💬 {outlierName} voted differently — worth a quick discussion before agreeing.
-        </div>
+        <p className="outlier-note">
+          <span className="outlier-name">{outlierName}</span> voted differently — discuss before agreeing.
+        </p>
       )}
     </div>
   )
@@ -216,23 +221,20 @@ function AgreeScore({ myVote, simVotes, onAgree }) {
   const [custom, setCustom] = useState('')
 
   return (
-    <div style={{ padding: '0 20px 16px', flexShrink: 0 }}>
-      <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--muted)', letterSpacing: '0.06em', marginBottom: 10 }}>
-        SET AGREED SCORE <span style={{ color: 'var(--muted)', fontWeight: 400 }}>(facilitator)</span>
-      </div>
-      <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+    <div className="agree-section">
+      <span className="label">Set Agreed Score</span>
+      <span style={{ fontSize: 11, color: 'var(--muted)', marginLeft: 8 }}>facilitator</span>
+      <div className="agree-row">
         {sorted.map(v => (
-          <div key={v} className="vcard-sm" onClick={() => { setChosen(v); setCustom('') }}
-            style={{ cursor: 'pointer', borderColor: chosen === v ? 'var(--accent)' : 'var(--border2)',
-              background: chosen === v ? 'var(--accent)' : 'white',
-              color: chosen === v ? 'white' : '#0b0f1a', width: 40, height: 56, fontSize: 18 }}>
+          <div key={v} className={`vcard-sm ${chosen === v ? 'chosen' : ''}`}
+            onClick={() => { setChosen(v); setCustom('') }}>
             {v}
           </div>
         ))}
         <input className="input" placeholder="custom…" value={custom}
           onChange={e => { setCustom(e.target.value); setChosen(null) }}
           style={{ width: 80, padding: '7px 10px', fontSize: 13 }} />
-        <button className="btn btn-green"
+        <button className="btn btn-primary"
           disabled={chosen === null && !custom}
           onClick={() => onAgree(custom || chosen)}
           style={{ marginLeft: 'auto' }}>
@@ -259,7 +261,7 @@ function JiraModal({ onImport, onClose }) {
     <div className="modal-bg" onClick={onClose}>
       <div className="modal" onClick={e => e.stopPropagation()}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <div style={{ fontSize: 16, fontWeight: 600 }}>Import from Jira</div>
+          <div className="modal-title">Import from Jira</div>
           <button className="btn btn-ghost btn-sm" onClick={onClose}>✕</button>
         </div>
         <div style={{ display: 'flex', gap: 8 }}>
@@ -268,31 +270,24 @@ function JiraModal({ onImport, onClose }) {
           {query && <button className="btn btn-ghost btn-sm" onClick={() => setQuery('')}>✕</button>}
         </div>
         <div style={{ fontSize: 12, color: 'var(--muted)' }}>
-          Project: <strong style={{ color: 'var(--muted2)' }}>Team Axon</strong> · {filtered.length} issue{filtered.length !== 1 ? 's' : ''}
+          Project: <strong style={{ color: 'var(--text2)' }}>Team Axon</strong>
+          {' · '}{filtered.length} issue{filtered.length !== 1 ? 's' : ''}
         </div>
-        <div style={{ overflow: 'auto', flex: 1, display: 'flex', flexDirection: 'column', gap: 4 }}>
+        <div className="jira-issues">
           {filtered.length === 0 && (
             <div style={{ color: 'var(--muted)', fontSize: 13, textAlign: 'center', padding: '24px 0' }}>
               No issues match your search.
             </div>
           )}
           {filtered.map(issue => (
-            <div key={issue.key} onClick={() => toggle(issue.key)}
-              style={{ display: 'flex', gap: 10, alignItems: 'flex-start', padding: '10px 12px', borderRadius: 7,
-                background: selected.has(issue.key) ? 'rgba(91,124,246,0.08)' : 'var(--s2)',
-                border: `1px solid ${selected.has(issue.key) ? 'var(--accent)' : 'var(--border)'}`,
-                cursor: 'pointer', transition: 'all 0.1s' }}>
-              <div style={{ width: 16, height: 16, borderRadius: 4, border: `2px solid ${selected.has(issue.key) ? 'var(--accent)' : 'var(--border2)'}`,
-                background: selected.has(issue.key) ? 'var(--accent)' : 'transparent', flexShrink: 0, marginTop: 2,
-                display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 10, color: 'white' }}>
-                {selected.has(issue.key) ? '✓' : ''}
-              </div>
+            <div key={issue.key}
+              className={`jira-issue-row ${selected.has(issue.key) ? 'selected' : ''}`}
+              onClick={() => toggle(issue.key)}>
+              <div className="jira-checkbox">{selected.has(issue.key) ? '✓' : ''}</div>
               <div>
-                <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 2 }}>
-                  <span style={{ fontSize: 11, color: 'var(--accent)', fontWeight: 600 }}>{issue.key}</span>
-                  <span style={{ fontSize: 13, fontWeight: 500 }}>{issue.title}</span>
-                </div>
-                <span style={{ fontSize: 12, color: 'var(--muted2)' }}>{issue.desc}</span>
+                <div className="jira-key">{issue.key}</div>
+                <div className="jira-issue-title">{issue.title}</div>
+                <div className="jira-issue-desc">{issue.desc}</div>
               </div>
             </div>
           ))}
@@ -303,7 +298,7 @@ function JiraModal({ onImport, onClose }) {
             <button className="btn btn-ghost" onClick={onClose}>Cancel</button>
             <button className="btn btn-primary" disabled={!selected.size}
               onClick={() => onImport(JIRA_ISSUES.filter(i => selected.has(i.key)))}>
-              Import {selected.size > 0 ? selected.size : ''} stories
+              Import {selected.size > 0 ? selected.size : ''} {selected.size === 1 ? 'story' : 'stories'}
             </button>
           </div>
         </div>
@@ -319,34 +314,35 @@ function AddStoryModal({ onAdd, onClose, onSwitchToJira }) {
 
   return (
     <div className="modal-bg" onClick={onClose}>
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 0 }} onClick={e => e.stopPropagation()}>
-        <div className="modal" style={{ width: 420 }}>
-          <div style={{ fontSize: 16, fontWeight: 600 }}>Add Story</div>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-            <div>
-              <div style={{ fontSize: 12, color: 'var(--muted2)', marginBottom: 5 }}>Title</div>
-              <input className="input" placeholder="As a user, I want to…" value={title}
-                onChange={e => setTitle(e.target.value)} autoFocus
-                onKeyDown={e => e.key === 'Enter' && title.trim() && (onAdd({ title: title.trim(), desc: desc.trim() }), onClose())} />
-            </div>
-            <div>
-              <div style={{ fontSize: 12, color: 'var(--muted2)', marginBottom: 5 }}>Description (optional)</div>
-              <textarea className="input" rows={3} placeholder="Acceptance criteria, context…"
-                value={desc} onChange={e => setDesc(e.target.value)} />
-            </div>
+      <div className="modal" style={{ width: 420 }} onClick={e => e.stopPropagation()}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <div className="modal-title">Add Story</div>
+          <button className="btn btn-ghost btn-sm" onClick={onClose}>✕</button>
+        </div>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+          <div>
+            <label className="field-label">Title</label>
+            <input className="input" placeholder="As a user, I want to…" value={title}
+              onChange={e => setTitle(e.target.value)} autoFocus
+              onKeyDown={e => e.key === 'Enter' && title.trim() && (onAdd({ title: title.trim(), desc: desc.trim() }), onClose())} />
           </div>
-          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
+          <div>
+            <label className="field-label">Description (optional)</label>
+            <textarea className="input" rows={3} placeholder="Acceptance criteria, context…"
+              value={desc} onChange={e => setDesc(e.target.value)} />
+          </div>
+        </div>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <button className="btn btn-ghost btn-sm" onClick={onSwitchToJira}>
+            Import from Jira →
+          </button>
+          <div style={{ display: 'flex', gap: 8 }}>
             <button className="btn btn-ghost" onClick={onClose}>Cancel</button>
             <button className="btn btn-primary" disabled={!title.trim()}
               onClick={() => { onAdd({ title: title.trim(), desc: desc.trim() }); onClose() }}>
               Add Story
             </button>
           </div>
-        </div>
-        <div style={{ textAlign: 'center', marginTop: 12 }}>
-          <button className="btn btn-ghost btn-sm" onClick={onSwitchToJira}>
-            Import from Jira instead →
-          </button>
         </div>
       </div>
     </div>
@@ -357,15 +353,12 @@ function AddStoryModal({ onAdd, onClose, onSwitchToJira }) {
 function TopBar({ roomName, isVoting, onToggleVoting }) {
   return (
     <div className="topbar">
-      <div className="topbar-logo">♠ <span>Planning</span></div>
-      <div style={{ width: 1, height: 20, background: 'var(--border)' }} />
-      <div style={{ flex: 1, fontSize: 14, fontWeight: 500, color: 'var(--muted2)' }}>{roomName}</div>
+      <div className="topbar-room">{roomName}</div>
       <Toggle on={isVoting} onChange={onToggleVoting} label={isVoting ? 'Voting' : 'Observing'} />
-      <div style={{ width: 1, height: 20, background: 'var(--border)' }} />
-      <div style={{ display: 'flex', alignItems: 'center', gap: 7, fontSize: 13 }}>
-        <div style={{ width: 26, height: 26, borderRadius: '50%', background: 'var(--accent)',
-          display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 600 }}>A</div>
-        <span style={{ color: 'var(--muted2)' }}>Alex ★</span>
+      <div className="divider" />
+      <div className="user-chip">
+        <div className="user-avatar">A</div>
+        <span>Alex ★</span>
       </div>
     </div>
   )
@@ -376,8 +369,7 @@ function BottomBar({ phase, myVote, simVotes, onReveal, onClear }) {
   const votedCount = [myVote !== null, !!simVotes.p1, !!simVotes.p2, !!simVotes.p3].filter(Boolean).length
 
   return (
-    <div style={{ height: 56, borderTop: '1px solid var(--border)', padding: '0 20px',
-      display: 'flex', alignItems: 'center', gap: 10, background: 'var(--s1)', flexShrink: 0 }}>
+    <div className="bottombar">
       {phase === 'voting' && (
         <>
           {myVote !== null && (
@@ -389,7 +381,7 @@ function BottomBar({ phase, myVote, simVotes, onReveal, onClear }) {
               {4 - votedCount} still voting…
             </span>
           )}
-          <button className="btn btn-primary" disabled={votedCount === 0} onClick={onReveal} style={{ gap: 6 }}>
+          <button className="btn btn-primary" disabled={votedCount === 0} onClick={onReveal}>
             Reveal Votes →
           </button>
         </>
@@ -487,22 +479,21 @@ function RoomView({ roomName, stories, setStories, startIdx = 0 }) {
 
   if (phase === 'complete') {
     return (
-      <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center',
-        flexDirection: 'column', gap: 20, padding: 40 }}>
-        <div style={{ fontSize: 40 }}>🎉</div>
-        <div style={{ fontSize: 24, fontWeight: 700 }}>All stories pointed!</div>
-        <div style={{ background: 'var(--s2)', border: '1px solid var(--border)', borderRadius: 10,
-          padding: 20, width: 400, display: 'flex', flexDirection: 'column', gap: 8 }}>
+      <div className="complete-view">
+        <div className="complete-heading">Session Complete</div>
+        <div className="complete-table">
           {stories.map((s, i) => (
-            <div key={s.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-              padding: '8px 0', borderBottom: i < stories.length - 1 ? '1px solid var(--border)' : 'none' }}>
-              <span style={{ fontSize: 13, color: 'var(--muted2)' }}>{s.title}</span>
+            <div key={s.id} className="complete-row">
+              <span className="complete-row-title">{s.title}</span>
               <span className="badge badge-green">{s.points}</span>
             </div>
           ))}
         </div>
         <button className="btn btn-primary btn-lg"
-          onClick={() => { setCurrentIdx(0); setPhase('voting'); setMyVote(null); setSimVotes({}); setStories(ss => ss.map(s => ({ ...s, points: null }))) }}>
+          onClick={() => {
+            setCurrentIdx(0); setPhase('voting'); setMyVote(null); setSimVotes({})
+            setStories(ss => ss.map(s => ({ ...s, points: null })))
+          }}>
           Start New Session
         </button>
       </div>
@@ -525,6 +516,11 @@ function RoomView({ roomName, stories, setStories, startIdx = 0 }) {
           <div style={{ flex: 1, overflow: 'auto' }}>
             {phase === 'voting' && isVoting && (
               <VotingCards selected={myVote} onSelect={setMyVote} />
+            )}
+            {phase === 'voting' && !isVoting && (
+              <div style={{ padding: '24px 24px', color: 'var(--muted)', fontSize: 13 }}>
+                Observing this round.
+              </div>
             )}
             {phase === 'revealed' && (
               <div className="fade-up">
@@ -561,19 +557,18 @@ function RoomView({ roomName, stories, setStories, startIdx = 0 }) {
 /* ── Landing view ── */
 function LandingView({ onCreateRoom }) {
   return (
-    <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column', gap: 0 }}>
-      <div style={{ textAlign: 'center', marginBottom: 40 }}>
-        <div style={{ fontSize: 48, marginBottom: 12, letterSpacing: 8, opacity: 0.3 }}>♠ ♥ ♣ ♦</div>
-        <h1 style={{ fontSize: 32, fontWeight: 700, letterSpacing: -0.5, marginBottom: 8 }}>Planning Poker</h1>
-        <p style={{ fontSize: 15, color: 'var(--muted2)' }}>Estimate stories as a team — fast, focused, async-friendly.</p>
-      </div>
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 10, width: 300 }}>
-        <button className="btn btn-primary btn-lg" style={{ width: '100%' }} onClick={onCreateRoom}>
-          Create Room
-        </button>
-        <div style={{ display: 'flex', gap: 10 }}>
-          <input className="input" placeholder="Paste invite link…" style={{ flex: 1 }} />
-          <button className="btn btn-ghost">Join</button>
+    <div className="landing">
+      <div className="landing-inner">
+        <h1 className="landing-heading">Planning<br />Poker</h1>
+        <p className="landing-sub">Estimate stories as a team — focused, structured, decisive.</p>
+        <div className="landing-actions">
+          <button className="btn btn-primary btn-lg" style={{ width: '100%' }} onClick={onCreateRoom}>
+            Create Session
+          </button>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <input className="input" placeholder="Paste invite link…" style={{ flex: 1 }} />
+            <button className="btn btn-ghost">Join</button>
+          </div>
         </div>
       </div>
     </div>
@@ -585,29 +580,27 @@ function CreateRoomView({ onNext }) {
   const [name, setName] = useState('')
 
   return (
-    <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-      <div style={{ width: 380, display: 'flex', flexDirection: 'column', gap: 20 }}>
+    <div className="form-view">
+      <div className="form-inner">
         <div>
-          <h2 style={{ fontSize: 22, fontWeight: 700, marginBottom: 6 }}>Create a room</h2>
-          <p style={{ fontSize: 14, color: 'var(--muted2)' }}>Give your session a name so your team knows what to join.</p>
+          <div className="form-heading">New Session</div>
+          <p className="form-sub">Give this session a name so your team knows what to join.</p>
         </div>
         <div>
-          <div style={{ fontSize: 12, color: 'var(--muted2)', marginBottom: 6 }}>Session name</div>
-          <input className="input" placeholder="e.g. Sprint #42 Planning" value={name}
+          <label className="field-label">Session name</label>
+          <input className="input" placeholder="e.g. Sprint 42 Planning" value={name}
             onChange={e => setName(e.target.value)}
             onKeyDown={e => e.key === 'Enter' && name.trim() && onNext(name.trim())}
             autoFocus />
         </div>
-        <div style={{ background: 'var(--s2)', border: '1px solid var(--border)', borderRadius: 8, padding: 14 }}>
-          <div style={{ fontSize: 12, fontWeight: 500, marginBottom: 8 }}>Card scale</div>
-          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+        <div className="card-preview">
+          <div className="card-preview-title">Card scale · Fibonacci</div>
+          <div className="card-preview-chips">
             {FIBS.map(v => (
-              <div key={v} style={{ width: 34, height: 48, borderRadius: 5, border: '1.5px solid var(--border2)',
-                background: 'white', color: '#0b0f1a', display: 'flex', alignItems: 'center',
-                justifyContent: 'center', fontSize: 14, fontWeight: 700 }}>{v}</div>
+              <div key={v} className="card-chip">{v}</div>
             ))}
           </div>
-          <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 8 }}>Fibonacci — locked for this session</div>
+          <div className="card-preview-note">Locked for this session</div>
         </div>
         <button className="btn btn-primary btn-lg" disabled={!name.trim()} onClick={() => onNext(name.trim())}>
           Continue →
@@ -632,28 +625,29 @@ function AddStoriesView({ roomName, onStart }) {
   }
 
   return (
-    <div style={{ flex: 1, display: 'flex', overflow: 'hidden' }}>
-      <div style={{ width: 420, borderRight: '1px solid var(--border)', padding: 28, display: 'flex',
-        flexDirection: 'column', gap: 16, overflow: 'auto' }}>
+    <div className="add-stories-view">
+      <div className="add-stories-form">
         <div>
-          <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--muted)', letterSpacing: '0.06em', marginBottom: 6 }}>ROOM</div>
-          <h2 style={{ fontSize: 20, fontWeight: 700, marginBottom: 4 }}>{roomName}</h2>
-          <p style={{ fontSize: 13, color: 'var(--muted2)' }}>Add the stories you want to estimate.</p>
+          <div style={{
+            fontFamily: 'var(--font-display)', fontSize: 10, fontWeight: 600,
+            letterSpacing: '0.12em', textTransform: 'uppercase',
+            color: 'var(--muted)', marginBottom: 6,
+          }}>{roomName}</div>
+          <div className="form-heading" style={{ fontSize: 22 }}>Add Stories</div>
+          <p className="form-sub" style={{ marginTop: 4 }}>Add the stories you want to estimate.</p>
         </div>
-        <div style={{ background: 'var(--s2)', border: '1px solid var(--border)', borderRadius: 9, padding: 14,
-          display: 'flex', flexDirection: 'column', gap: 10 }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
           <input className="input" placeholder="Story title…" value={newTitle}
             onChange={e => setNewTitle(e.target.value)}
-            onKeyDown={e => e.key === 'Enter' && newTitle.trim() && add()}
-            style={{ background: 'var(--s3)' }} />
-          <textarea className="input" rows={2} placeholder="Description (optional)" value={newDesc}
-            onChange={e => setNewDesc(e.target.value)} style={{ background: 'var(--s3)' }} />
+            onKeyDown={e => e.key === 'Enter' && newTitle.trim() && add()} />
+          <textarea className="input" rows={2} placeholder="Description (optional)"
+            value={newDesc} onChange={e => setNewDesc(e.target.value)} />
           <div style={{ display: 'flex', gap: 8 }}>
             <button className="btn btn-primary btn-sm" disabled={!newTitle.trim()} onClick={add}>
-              Add Story
+              Add
             </button>
             <button className="btn btn-ghost btn-sm" onClick={() => setShowJira(true)}>
-              ↗ Import from Jira
+              Import from Jira
             </button>
           </div>
         </div>
@@ -662,26 +656,22 @@ function AddStoriesView({ roomName, onStart }) {
           Start Session ({stories.length} {stories.length === 1 ? 'story' : 'stories'}) →
         </button>
       </div>
-      <div style={{ flex: 1, padding: 28, overflow: 'auto' }}>
-        <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--muted)', letterSpacing: '0.06em', marginBottom: 14 }}>
-          STORIES TO ESTIMATE
-        </div>
+      <div className="add-stories-list">
+        <div className="label" style={{ display: 'block', marginBottom: 16 }}>Stories to estimate</div>
         {stories.length === 0 ? (
-          <div style={{ color: 'var(--muted)', fontSize: 14, marginTop: 40, textAlign: 'center' }}>
+          <p style={{ color: 'var(--muted)', fontSize: 13, marginTop: 40 }}>
             No stories yet — add one on the left, or import from Jira.
-          </div>
+          </p>
         ) : (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+          <div>
             {stories.map((s, i) => (
-              <div key={s.id} style={{ background: 'var(--s2)', border: '1px solid var(--border)',
-                borderRadius: 8, padding: '10px 14px', display: 'flex', gap: 10, alignItems: 'flex-start' }}>
-                <span style={{ fontSize: 12, color: 'var(--muted)', marginTop: 1, width: 22, flexShrink: 0 }}>#{i + 1}</span>
+              <div key={s.id} className="story-list-item">
+                <span className="story-list-num">{i + 1}</span>
                 <div style={{ flex: 1 }}>
-                  <div style={{ fontSize: 13, fontWeight: 500, marginBottom: 2 }}>{s.title}</div>
-                  {s.desc && <div style={{ fontSize: 12, color: 'var(--muted2)' }}>{s.desc}</div>}
+                  <div className="story-list-title">{s.title}</div>
+                  {s.desc && <div className="story-list-desc">{s.desc}</div>}
                 </div>
-                <button style={{ background: 'none', border: 'none', color: 'var(--muted)', cursor: 'pointer',
-                  fontSize: 14, padding: '2px 4px' }}
+                <button className="story-list-remove"
                   onClick={() => setStories(ss => ss.filter(x => x.id !== s.id))}>✕</button>
               </div>
             ))}
@@ -725,14 +715,14 @@ export default function App() {
 
       {view !== 'room' && (
         <div style={{ position: 'fixed', bottom: 16, left: 16 }}>
-          <button className="btn btn-ghost btn-sm" style={{ fontSize: 11, opacity: 0.5 }}
+          <button className="btn btn-ghost btn-sm" style={{ fontSize: 11, opacity: 0.45 }}
             onClick={() => {
-              setRoomName('Sprint #42 Planning')
+              setRoomName('Sprint 42 Planning')
               setStories([
-                { id: 1, title: 'User profile page redesign',  desc: 'Edit name, avatar and bio',        points: null },
-                { id: 2, title: 'Dashboard analytics widget',  desc: 'Show key metrics on homepage',     points: null },
-                { id: 3, title: 'Export to CSV',              desc: 'Bulk export from table views',      points: null },
-                { id: 4, title: 'Dark mode toggle',           desc: 'System preference + manual override', points: null },
+                { id: 1, title: 'User profile page redesign',  desc: 'Edit name, avatar and bio',           points: null },
+                { id: 2, title: 'Dashboard analytics widget',  desc: 'Show key metrics on homepage',        points: null },
+                { id: 3, title: 'Export to CSV',              desc: 'Bulk export from table views',         points: null },
+                { id: 4, title: 'Dark mode toggle',           desc: 'System preference + manual override',  points: null },
               ])
               setView('room')
             }}>
