@@ -1,4 +1,25 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
+
+/* ── Count-up animation hook ── */
+function useCountUp(target, duration = 650) {
+  const [display, setDisplay] = useState('0')
+  useEffect(() => {
+    if (target === '–') { setDisplay('–'); return }
+    const num = parseFloat(target)
+    if (isNaN(num)) { setDisplay(String(target)); return }
+    const start = performance.now()
+    let raf
+    const tick = (now) => {
+      const t = Math.min((now - start) / duration, 1)
+      const eased = 1 - Math.pow(1 - t, 4) // ease-out-quart
+      setDisplay((num * eased).toFixed(1))
+      if (t < 1) raf = requestAnimationFrame(tick)
+    }
+    raf = requestAnimationFrame(tick)
+    return () => cancelAnimationFrame(raf)
+  }, [target, duration])
+  return display
+}
 
 const FIBS = [1, 2, 3, 5, 8, 13, 21, '?']
 const SIMULATED_PLAYERS = [
@@ -168,7 +189,12 @@ function ActiveStoryCard({ story, num, total }) {
 function VotingCards({ selected, onSelect }) {
   return (
     <div className="voting-section">
-      <span className="label">Your Estimate</span>
+      <div style={{ display: 'flex', alignItems: 'baseline', gap: 12 }}>
+        <span className="label">Your Estimate</span>
+        <span style={{ fontSize: 11, color: 'var(--muted)', opacity: 0.55, letterSpacing: '0.02em' }}>
+          1–8 to vote
+        </span>
+      </div>
       <div className="vote-grid">
         {FIBS.map(v => (
           <div key={v} className={`vcard ${selected === v ? 'selected' : ''}`} onClick={() => onSelect(v)}>
@@ -189,12 +215,13 @@ function RevealStats({ votes, outlierName }) {
   const freq = {}
   nums.forEach(v => { freq[v] = (freq[v] || 0) + 1 })
   const mode = nums.length ? +Object.entries(freq).sort((a, b) => b[1] - a[1])[0][0] : '–'
+  const avgDisplay = useCountUp(avg)
 
   return (
     <div className="reveal-section">
       <div className="stat-row">
         <div>
-          <div className="stat-val primary">{avg}</div>
+          <div className="stat-val primary">{avgDisplay}</div>
           <div className="stat-label">Average</div>
         </div>
         <div>
@@ -373,6 +400,20 @@ function TopBar({ roomName, isVoting, onToggleVoting }) {
 function BottomBar({ phase, myVote, simVotes, onReveal, onClear }) {
   const votedCount = [myVote !== null, !!simVotes.p1, !!simVotes.p2, !!simVotes.p3].filter(Boolean).length
 
+  // Personalized waiting copy
+  const notVoted = []
+  if (myVote === null) notVoted.push('you')
+  SIMULATED_PLAYERS.filter(p => p.role === 'voter').forEach(p => {
+    if (!simVotes[p.id]) notVoted.push(p.name)
+  })
+  const waitingCopy = notVoted.length === 1
+    ? `Waiting for ${notVoted[0]}…`
+    : notVoted.length === 2
+    ? `Waiting for ${notVoted[0]} and ${notVoted[1]}…`
+    : notVoted.length > 2
+    ? `Waiting for ${notVoted.slice(0, -1).join(', ')} and ${notVoted[notVoted.length - 1]}…`
+    : null
+
   return (
     <div className="bottombar">
       {phase === 'voting' && (
@@ -381,9 +422,14 @@ function BottomBar({ phase, myVote, simVotes, onReveal, onClear }) {
             <button className="btn btn-ghost btn-sm" onClick={onClear}>Clear vote</button>
           )}
           <div style={{ flex: 1 }} />
-          {votedCount < 4 && (
+          {votedCount > 0 && votedCount < 4 && (
             <span className="pulse" style={{ fontSize: 13, color: 'var(--muted2)' }}>
-              {4 - votedCount} still voting…
+              {waitingCopy}
+            </span>
+          )}
+          {votedCount === 4 && (
+            <span style={{ fontSize: 13, color: 'var(--green)', fontWeight: 500 }}>
+              All votes in
             </span>
           )}
           <button className="btn btn-primary btn-lg" disabled={votedCount === 0} onClick={onReveal}>
@@ -416,6 +462,19 @@ function RoomView({ roomName, stories, setStories, startIdx = 0 }) {
   }, [currentIdx])
 
   const clearTimers = () => { simTimers.current.forEach(clearTimeout); simTimers.current = [] }
+
+  // Keyboard shortcuts: 1-8 to vote (mapped to Fibonacci positions)
+  useEffect(() => {
+    if (phase !== 'voting' || !isVoting) return
+    const KEY_MAP = { '1': 1, '2': 2, '3': 3, '4': 5, '5': 8, '6': 13, '7': 21, '8': '?' }
+    const handler = (e) => {
+      if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return
+      if (e.metaKey || e.ctrlKey || e.altKey) return
+      if (KEY_MAP[e.key] !== undefined) setMyVote(KEY_MAP[e.key])
+    }
+    window.addEventListener('keydown', handler)
+    return () => window.removeEventListener('keydown', handler)
+  }, [phase, isVoting])
 
   useEffect(() => {
     clearTimers()
@@ -483,6 +542,7 @@ function RoomView({ roomName, stories, setStories, startIdx = 0 }) {
   const currentStory = stories[currentIdx]
 
   if (phase === 'complete') {
+    const totalPoints = stories.reduce((sum, s) => sum + (typeof s.points === 'number' ? s.points : 0), 0)
     return (
       <div className="complete-view">
         <div style={{ textAlign: 'center' }}>
@@ -496,6 +556,15 @@ function RoomView({ roomName, stories, setStories, startIdx = 0 }) {
               <span className="badge badge-green">{s.points}</span>
             </div>
           ))}
+          <div className="complete-row" style={{ background: 'var(--s1)' }}>
+            <span style={{
+              fontFamily: 'var(--font-display)', fontSize: 11, fontWeight: 600,
+              letterSpacing: '0.12em', textTransform: 'uppercase', color: 'var(--muted)'
+            }}>Total</span>
+            <span style={{
+              fontFamily: 'var(--font-display)', fontSize: 16, fontWeight: 700, color: 'var(--accent)'
+            }}>{totalPoints} pts</span>
+          </div>
         </div>
         <button className="btn btn-primary btn-lg"
           onClick={() => {
