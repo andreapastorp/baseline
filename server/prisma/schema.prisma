@@ -1,0 +1,51 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model Room {
+  id           String        @id @default(cuid())
+  name         String        @unique
+  createdAt    DateTime      @default(now())
+  stories      Story[]
+  participants Participant[]
+}
+
+model Participant {
+  id            String   @id @default(cuid())
+  roomId        String
+  room          Room     @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  name          String
+  role          String   @default("voter")
+  token         String   @unique
+  isFacilitator Boolean  @default(false)
+  votes         Vote[]
+}
+
+model Story {
+  id        String   @id @default(cuid())
+  roomId    String
+  room      Room     @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  title     String
+  desc      String   @default("")
+  points    String?
+  position  Int
+  phase     String   @default("voting")
+  votes     Vote[]
+  createdAt DateTime @default(now())
+}
+
+model Vote {
+  id            String      @id @default(cuid())
+  storyId       String
+  story         Story       @relation(fields: [storyId], references: [id], onDelete: Cascade)
+  participantId String
+  participant   Participant @relation(fields: [participantId], references: [id], onDelete: Cascade)
+  value         String
+
+  @@unique([storyId, participantId])
+}
