@@ -21,6 +21,37 @@ function useCountUp(target, duration = 650) {
   return display
 }
 
+/* ── Modal a11y: focus trap + Escape + focus restore ── */
+function useModalA11y(onClose) {
+  const ref = useRef(null)
+  useEffect(() => {
+    const prev = document.activeElement
+    return () => prev?.focus()
+  }, [])
+  useEffect(() => {
+    const el = ref.current
+    if (!el) return
+    const onKeyDown = (e) => {
+      if (e.key === 'Escape') { e.preventDefault(); onClose(); return }
+      if (e.key !== 'Tab') return
+      const focusable = [...el.querySelectorAll(
+        'button:not([disabled]), input:not([disabled]), textarea:not([disabled]), [role="checkbox"]:not([disabled]), [tabindex]:not([tabindex="-1"])'
+      )]
+      if (!focusable.length) return
+      const first = focusable[0]
+      const last = focusable[focusable.length - 1]
+      if (e.shiftKey) {
+        if (document.activeElement === first) { e.preventDefault(); last.focus() }
+      } else {
+        if (document.activeElement === last) { e.preventDefault(); first.focus() }
+      }
+    }
+    document.addEventListener('keydown', onKeyDown)
+    return () => document.removeEventListener('keydown', onKeyDown)
+  }, [onClose])
+  return ref
+}
+
 /* ── Constants ── */
 const FIBS = [1, 2, 3, 5, 8, 13, 21, '?']
 const JIRA_ISSUES = [
@@ -31,8 +62,8 @@ const JIRA_ISSUES = [
   { key: 'AXN-105', title: 'Mobile responsive nav',       desc: 'Collapsible sidebar and touch-friendly controls' },
   { key: 'AXN-106', title: 'Email notification settings', desc: 'Per-user preference controls for all notification types' },
 ]
-const LS_KEY = 'poker_planning_state'
-const LS_KEY_IDENTITY = 'poker_identity'
+const LS_KEY = 'baseline_planning_state'
+const LS_KEY_IDENTITY = 'baseline_identity'
 
 /* ── API helper ── */
 async function api(path, options = {}) {
@@ -58,12 +89,18 @@ function getWsUrl(roomName, token) {
 /* ── Toggle ── */
 function Toggle({ on, onChange, label }) {
   return (
-    <div className="toggle-wrap" onClick={() => onChange(!on)}>
+    <button
+      role="switch"
+      aria-checked={on}
+      aria-label={label || 'Toggle'}
+      className="toggle-wrap"
+      onClick={() => onChange(!on)}
+    >
       <div className={`toggle-track ${on ? 'on' : ''}`}>
         <div className="toggle-thumb" />
       </div>
-      {label && <span className="toggle-label">{label}</span>}
-    </div>
+      {label && <span className="toggle-label" aria-hidden="true">{label}</span>}
+    </button>
   )
 }
 
@@ -113,15 +150,19 @@ function ParticipantsRow({ me, participants, hasVoted, revealedVotes, revealed }
               style={{ opacity: p.role === 'observer' ? 0.4 : 1 }}>
               {p.role === 'voter'
                 ? <PCard voted={voted} value={val} revealed={revealed} delay={i * 120} />
-                : <div style={{
-                    width: 40, height: 56,
-                    border: '1px solid var(--border)',
-                    background: 'var(--s2)',
-                    display: 'flex', alignItems: 'center', justifyContent: 'center',
-                    fontFamily: 'var(--font-display)', fontSize: 9, fontWeight: 600,
-                    letterSpacing: '0.06em', color: 'var(--muted)',
-                    textTransform: 'uppercase',
-                  }}>obs</div>
+                : <div
+                    aria-label={`${p.name} — observer`}
+                    style={{
+                      width: 40, height: 56,
+                      border: '1px solid var(--border)',
+                      background: 'var(--s2)',
+                      display: 'flex', alignItems: 'center', justifyContent: 'center',
+                      fontFamily: 'var(--font-display)', fontSize: 9, fontWeight: 600,
+                      letterSpacing: '0.06em', color: 'var(--muted)',
+                      textTransform: 'uppercase',
+                    }}>
+                    <span aria-hidden="true">obs</span>
+                  </div>
               }
               <span className={`participant-name ${isMe ? 'is-me' : ''}`}>
                 {p.name}{p.isFacilitator ? ' ★' : ''}
@@ -131,8 +172,9 @@ function ParticipantsRow({ me, participants, hasVoted, revealedVotes, revealed }
         })}
         {!revealed && (
           <div className="vote-dots" style={{ marginLeft: 'auto', alignSelf: 'center' }}>
+            <span className="sr-only">{votedCount} of {voters.length} voted</span>
             {voters.map(p => (
-              <div key={p.id} className={`vote-dot ${hasVoted.has(p.id) ? 'voted' : 'waiting'}`} />
+              <div key={p.id} className={`vote-dot ${hasVoted.has(p.id) ? 'voted' : 'waiting'}`} aria-hidden="true" />
             ))}
           </div>
         )}
@@ -144,15 +186,19 @@ function ParticipantsRow({ me, participants, hasVoted, revealedVotes, revealed }
 /* ── Story sidebar row ── */
 function StoryRow({ story, active, onClick }) {
   return (
-    <div className={`story-row ${active ? 'active' : ''} ${story.points !== null ? 'done' : ''}`} onClick={onClick}>
+    <button
+      className={`story-row ${active ? 'active' : ''} ${story.points !== null ? 'done' : ''}`}
+      onClick={onClick}
+      aria-current={active ? 'true' : undefined}
+    >
       <span className="story-row-num">{story.num}</span>
       <span className="story-title">{story.title}</span>
       {story.points !== null
         ? <span className="story-pts">{story.points}</span>
         : active
-          ? <span className="story-arrow">▶</span>
+          ? <span className="story-arrow" aria-hidden="true">▶</span>
           : null}
-    </div>
+    </button>
   )
 }
 
@@ -209,9 +255,15 @@ function VotingCards({ selected, onSelect }) {
       </div>
       <div className="vote-grid">
         {FIBS.map(v => (
-          <div key={v} className={`vcard ${selected === v ? 'selected' : ''}`} onClick={() => onSelect(v)}>
+          <button
+            key={v}
+            className={`vcard ${selected === v ? 'selected' : ''}`}
+            onClick={() => onSelect(v)}
+            aria-pressed={selected === v}
+            aria-label={`Estimate ${v}${typeof v === 'number' ? (v === 1 ? ' point' : ' points') : ''}`}
+          >
             {v}
-          </div>
+          </button>
         ))}
       </div>
     </div>
@@ -271,12 +323,18 @@ function AgreeScore({ revealedVotes, onAgree }) {
       <span style={{ fontSize: 11, color: 'var(--muted)', marginLeft: 8 }}>facilitator</span>
       <div className="agree-row">
         {sorted.map(v => (
-          <div key={v} className={`vcard-sm ${chosen === v ? 'chosen' : ''}`}
-            onClick={() => { setChosen(v); setCustom('') }}>
+          <button
+            key={v}
+            className={`vcard-sm ${chosen === v ? 'chosen' : ''}`}
+            onClick={() => { setChosen(v); setCustom('') }}
+            aria-pressed={chosen === v}
+            aria-label={`Score ${v}`}
+          >
             {v}
-          </div>
+          </button>
         ))}
         <input className="input" placeholder="custom…" value={custom}
+          aria-label="Custom score"
           onChange={e => { setCustom(e.target.value); setChosen(null) }}
           style={{ width: 80, padding: '7px 10px', fontSize: 13 }} />
         <button className="btn btn-primary"
@@ -294,6 +352,7 @@ function AgreeScore({ revealedVotes, onAgree }) {
 function JiraModal({ onImport, onClose }) {
   const [selected, setSelected] = useState(new Set())
   const [query, setQuery] = useState('')
+  const modalRef = useModalA11y(onClose)
   const toggle = k => setSelected(s => { const n = new Set(s); n.has(k) ? n.delete(k) : n.add(k); return n })
   const filtered = JIRA_ISSUES.filter(i =>
     !query.trim() ||
@@ -303,10 +362,10 @@ function JiraModal({ onImport, onClose }) {
   )
   return (
     <div className="modal-bg" onClick={onClose}>
-      <div className="modal" onClick={e => e.stopPropagation()}>
+      <div className="modal" ref={modalRef} role="dialog" aria-modal="true" aria-labelledby="jira-modal-title" onClick={e => e.stopPropagation()}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <div className="modal-title">Import from Jira</div>
-          <button className="btn btn-ghost btn-sm" onClick={onClose}>✕</button>
+          <div className="modal-title" id="jira-modal-title">Import from Jira</div>
+          <button className="btn btn-ghost btn-sm" onClick={onClose} aria-label="Close">✕</button>
         </div>
         <div style={{ display: 'flex', gap: 8 }}>
           <input className="input" placeholder="Search or JQL (e.g. sprint = active)…"
@@ -326,8 +385,12 @@ function JiraModal({ onImport, onClose }) {
           {filtered.map(issue => (
             <div key={issue.key}
               className={`jira-issue-row ${selected.has(issue.key) ? 'selected' : ''}`}
-              onClick={() => toggle(issue.key)}>
-              <div className="jira-checkbox">{selected.has(issue.key) ? '✓' : ''}</div>
+              role="checkbox"
+              aria-checked={selected.has(issue.key)}
+              tabIndex="0"
+              onClick={() => toggle(issue.key)}
+              onKeyDown={e => { if (e.key === ' ' || e.key === 'Enter') { e.preventDefault(); toggle(issue.key) } }}>
+              <div className="jira-checkbox" aria-hidden="true">{selected.has(issue.key) ? '✓' : ''}</div>
               <div>
                 <div className="jira-key">{issue.key}</div>
                 <div className="jira-issue-title">{issue.title}</div>
@@ -355,12 +418,13 @@ function JiraModal({ onImport, onClose }) {
 function AddStoryModal({ onAdd, onClose, onSwitchToJira }) {
   const [title, setTitle] = useState('')
   const [desc, setDesc] = useState('')
+  const modalRef = useModalA11y(onClose)
   return (
     <div className="modal-bg" onClick={onClose}>
-      <div className="modal" style={{ width: 420 }} onClick={e => e.stopPropagation()}>
+      <div className="modal" ref={modalRef} role="dialog" aria-modal="true" aria-labelledby="add-story-modal-title" style={{ width: 'min(420px, 94vw)' }} onClick={e => e.stopPropagation()}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <div className="modal-title">Add Story</div>
-          <button className="btn btn-ghost btn-sm" onClick={onClose}>✕</button>
+          <div className="modal-title" id="add-story-modal-title">Add Story</div>
+          <button className="btn btn-ghost btn-sm" onClick={onClose} aria-label="Close">✕</button>
         </div>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
           <div>
@@ -415,7 +479,7 @@ function TopBar({ roomName, me, participants, isVoting, onToggleVoting, onLeave 
   return (
     <div className="topbar">
       <div className="topbar-left">
-        <button className="btn btn-ghost btn-sm" onClick={onLeave} style={{ marginRight: 4 }}>←</button>
+        <button className="btn btn-ghost btn-sm" onClick={onLeave} style={{ marginRight: 4 }} aria-label="Back to lobby">←</button>
         <div className="topbar-room">{roomName}</div>
         <div className="topbar-players">
           {others.map((p, i) => (
@@ -935,7 +999,7 @@ function LandingView({ displayName, onDisplayNameChange, onCreateRoom, onJoined,
   return (
     <div className="landing">
       <div className="landing-inner">
-        <h1 className="landing-heading">Planning<br /><em>Poker</em></h1>
+        <h1 className="landing-heading"><em>Baseline</em></h1>
         <p className="landing-sub">Estimate stories as a team — focused, structured, decisive.</p>
         <div className="landing-actions">
           <div>
@@ -958,7 +1022,7 @@ function LandingView({ displayName, onDisplayNameChange, onCreateRoom, onJoined,
               {loading ? '…' : 'Join'}
             </button>
           </div>
-          {error && <p style={{ color: 'oklch(0.5 0.2 25)', fontSize: 13, margin: 0 }}>{error}</p>}
+          {error && <p style={{ color: 'var(--error)', fontSize: 13, margin: 0 }}>{error}</p>}
         </div>
       </div>
     </div>
@@ -1018,7 +1082,7 @@ function CreateRoomView({ displayName: initialName, onDisplayNameChange, onCreat
           </div>
           <div className="card-preview-note">Locked for this session</div>
         </div>
-        {error && <p style={{ color: 'oklch(0.5 0.2 25)', fontSize: 13, margin: 0 }}>{error}</p>}
+        {error && <p style={{ color: 'var(--error)', fontSize: 13, margin: 0 }}>{error}</p>}
         <div style={{ display: 'flex', gap: 8 }}>
           <button className="btn btn-ghost" onClick={onBack}>← Back</button>
           <button className="btn btn-primary btn-lg" style={{ flex: 1 }}
@@ -1136,7 +1200,7 @@ export default function App() {
   const inviteRoom = new URLSearchParams(window.location.search).get('room')
 
   const [displayName, setDisplayName] = useState(
-    () => localStorage.getItem('poker_display_name') || ''
+    () => localStorage.getItem('baseline_display_name') || ''
   )
   const [identity, setIdentity] = useState(() => {
     try { return JSON.parse(localStorage.getItem(LS_KEY_IDENTITY) || 'null') } catch { return null }
@@ -1152,7 +1216,7 @@ export default function App() {
   })
 
   useEffect(() => {
-    localStorage.setItem('poker_display_name', displayName)
+    localStorage.setItem('baseline_display_name', displayName)
   }, [displayName])
 
   useEffect(() => {
