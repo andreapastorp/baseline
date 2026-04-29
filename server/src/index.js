@@ -9,5 +9,6 @@ const server = http.createServer(app)
 ws.setup(server)
 
 server.listen(PORT, () => {
-  console.log(`Server running on http://localhost:${PORT}`)
+  const addr = process.env.NODE_ENV === 'production' ? `port ${PORT}` : `http://localhost:${PORT}`
+  console.log(`Server running on ${addr}`)
 })
