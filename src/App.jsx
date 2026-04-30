@@ -209,7 +209,6 @@ function StorySidebar({ stories, currentIdx, isFacilitator, onAdd, onJump }) {
       <div className="sidebar-header">
         <span className="label">Stories</span>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <span className="sidebar-progress">{currentIdx + 1}/{stories.length}</span>
           {isFacilitator && (
             <button className="btn btn-ghost btn-sm" onClick={onAdd}>+ Add</button>
           )}
