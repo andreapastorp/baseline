@@ -2,6 +2,8 @@
 
 Baseline is a simple and functional multiplayer poker planning tool.
 
+![baseline screenshot](public/baseline.png)
+
 ## Features
 1. No signup
 2. Multiplayer
