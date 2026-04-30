@@ -736,7 +736,8 @@ function RoomView({ roomName, identity, onLeave }) {
 
   // Derive vote state from the current story — this scopes all vote display to the right story
   const currentStory = stories[currentIdx]
-  const currentVotes = currentStory?.votes || []
+  const observerIds = new Set(participants.filter(p => p.role === 'observer').map(p => p.id))
+  const currentVotes = (currentStory?.votes || []).filter(v => !observerIds.has(v.participantId))
   const hasVoted = new Set(currentVotes.map(v => v.participantId))
   const revealedVotes = Object.fromEntries(
     currentVotes.filter(v => v.value !== undefined).map(v => [v.participantId, parseVoteValue(v.value)])
