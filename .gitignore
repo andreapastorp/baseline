@@ -12,6 +12,11 @@ dist
 dist-ssr
 *.local
 
+# Env
+.env
+.env.*
+!.env.example
+
 # SQLite
 *.db
 *.db-shm
