@@ -305,42 +305,52 @@ function RevealStats({ votes, outlierName }) {
 }
 
 /* ── Agree score ── */
-function AgreeScore({ revealedVotes, onAgree }) {
+function AgreeScore({ revealedVotes, existingScore, onAgree }) {
   const allVotes = Object.values(revealedVotes).filter(v => typeof v === 'number')
   const freq = {}
   allVotes.forEach(v => { freq[v] = (freq[v] || 0) + 1 })
   const sorted = [...new Set(allVotes)].sort((a, b) => a - b)
   const suggested = sorted.length ? sorted.reduce((a, b) => (freq[a] || 0) >= (freq[b] || 0) ? a : b) : null
-  const [chosen, setChosen] = useState(suggested)
-  const [custom, setCustom] = useState('')
-  // Reset choices whenever votes change (new reveal)
-  const votesKey = JSON.stringify(revealedVotes)
-  useEffect(() => { setChosen(suggested); setCustom('') }, [votesKey])
+  const parsedExisting = existingScore != null ? (existingScore === '?' ? '?' : Number(existingScore)) : null
+  const [chosen, setChosen] = useState(parsedExisting ?? suggested)
+  const sortedSet = new Set(sorted)
+  const remaining = FIBS.filter(v => !sortedSet.has(v))
   return (
     <div className="agree-section">
       <span className="label">Set Agreed Score</span>
-      <span style={{ fontSize: 11, color: 'var(--muted)', marginLeft: 8 }}>facilitator</span>
       <div className="agree-row">
         {sorted.map(v => (
           <button
             key={v}
             className={`vcard-sm ${chosen === v ? 'chosen' : ''}`}
-            onClick={() => { setChosen(v); setCustom('') }}
+            onClick={() => setChosen(v)}
             aria-pressed={chosen === v}
             aria-label={`Score ${v}`}
           >
             {v}
           </button>
         ))}
-        <input className="input" placeholder="custom…" value={custom}
-          aria-label="Custom score"
-          onChange={e => { setCustom(e.target.value); setChosen(null) }}
-          style={{ width: 80, padding: '7px 10px', fontSize: 13 }} />
+        {remaining.length > 0 && (
+          <>
+            <div className="divider" />
+            {remaining.map(v => (
+              <button
+                key={v}
+                className={`vcard-sm ${chosen === v ? 'chosen' : ''}`}
+                onClick={() => setChosen(v)}
+                aria-pressed={chosen === v}
+                aria-label={`Score ${v}`}
+              >
+                {v}
+              </button>
+            ))}
+          </>
+        )}
         <button className="btn btn-primary"
-          disabled={chosen === null && !custom}
-          onClick={() => onAgree(custom || chosen)}
+          disabled={chosen === null}
+          onClick={() => onAgree(chosen)}
           style={{ marginLeft: 'auto' }}>
-          Set {custom || chosen} & Next →
+          Set {chosen} & Next →
         </button>
       </div>
     </div>
@@ -939,7 +949,7 @@ function RoomView({ roomName, identity, onLeave }) {
               <div className="fade-up">
                 <RevealStats votes={revealedValues} outlierName={outlier} />
                 {me.isFacilitator && (
-                  <AgreeScore revealedVotes={revealedVotes} onAgree={handleAgree} />
+                  <AgreeScore key={currentStory?.id} revealedVotes={revealedVotes} existingScore={currentStory?.points} onAgree={handleAgree} />
                 )}
               </div>
             )}
