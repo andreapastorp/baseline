@@ -54,6 +54,21 @@ function useModalA11y(onClose) {
 
 /* ── Constants ── */
 const FIBS = [1, 2, 3, 5, 8, 13, 21, '?']
+const AVATAR_COLORS = [
+  'oklch(0.52 0.18 250)',
+  'oklch(0.50 0.17 160)',
+  'oklch(0.62 0.20 50)',
+  'oklch(0.52 0.18 295)',
+  'oklch(0.52 0.17 185)',
+  'oklch(0.58 0.18 20)',
+  'oklch(0.54 0.17 220)',
+  'oklch(0.54 0.18 135)',
+]
+function avatarColor(id) {
+  let h = 0
+  for (const c of String(id)) h = (h * 31 + c.charCodeAt(0)) & 0xffff
+  return AVATAR_COLORS[h % AVATAR_COLORS.length]
+}
 const JIRA_ISSUES = [
   { key: 'AXN-101', title: 'User authentication flow',     desc: 'Implement OAuth 2.0 login with Google and GitHub' },
   { key: 'AXN-102', title: 'Dashboard analytics widget',   desc: 'Show active users, events, and conversion on home' },
@@ -203,7 +218,7 @@ function StoryRow({ story, active, onClick }) {
 }
 
 /* ── Story sidebar ── */
-function StorySidebar({ stories, currentIdx, isFacilitator, onAdd, onJump }) {
+function StorySidebar({ stories, currentIdx, isFacilitator, onAdd, onJump, participants, me }) {
   return (
     <div className="sidebar">
       <div className="sidebar-header">
@@ -220,10 +235,26 @@ function StorySidebar({ stories, currentIdx, isFacilitator, onAdd, onJump }) {
             onClick={() => onJump && onJump(i)} />
         ))}
       </div>
-      <div className="sidebar-footer">
-        {stories.filter(s => s.points !== null).length} done
-        {' · '}
-        {stories.filter(s => s.points === null).length} remaining
+      <div className="sidebar-room">
+        <div className="sidebar-room-header">
+          <span className="label">In the Room</span>
+        </div>
+        <div className="sidebar-room-list">
+          {participants.map(p => (
+            <div key={p.id} className={`room-participant ${p.role === 'observer' ? 'is-observer' : ''}`}>
+              <div className="room-avatar-wrap">
+                <div className="room-avatar" style={{ background: avatarColor(p.id) }}>
+                  {p.name[0].toUpperCase()}
+                </div>
+                {p.role === 'voter' && <div className="room-online-dot" />}
+              </div>
+              <span className="room-name">
+                {p.name}{p.isFacilitator ? ' ★' : ''}
+              </span>
+              {p.role === 'observer' && <span className="room-obs-tag">obs</span>}
+            </div>
+          ))}
+        </div>
       </div>
     </div>
   )
@@ -483,20 +514,12 @@ function ShareButton({ roomName }) {
 }
 
 /* ── Top Bar ── */
-function TopBar({ roomName, me, participants, isVoting, onToggleVoting, onLeave }) {
-  const others = participants.filter(p => me && p.id !== me.id)
+function TopBar({ roomName, me, isVoting, onToggleVoting, onLeave }) {
   return (
     <div className="topbar">
       <div className="topbar-left">
         <button className="btn btn-ghost btn-sm" onClick={onLeave} style={{ marginRight: 4 }} aria-label="Back to lobby">←</button>
         <div className="topbar-room">{roomName}</div>
-        <div className="topbar-players">
-          {others.map((p, i) => (
-            <div key={p.id} className="topbar-avatar" style={{ zIndex: others.length - i }}>
-              {p.name[0].toUpperCase()}
-            </div>
-          ))}
-        </div>
         <ShareButton roomName={roomName} />
       </div>
       <div className="topbar-right">
@@ -941,13 +964,15 @@ function RoomView({ roomName, identity, onLeave }) {
 
   return (
     <>
-      <TopBar roomName={roomName} me={me} participants={participants}
+      <TopBar roomName={roomName} me={me}
         isVoting={isVoting} onToggleVoting={handleToggleObserver} onLeave={onLeave} />
       <div style={{ flex: 1, display: 'flex', overflow: 'hidden' }}>
         <StorySidebar stories={stories} currentIdx={currentIdx}
           isFacilitator={me.isFacilitator}
           onAdd={() => setShowAddModal(true)}
-          onJump={handleJump} />
+          onJump={handleJump}
+          participants={participants}
+          me={me} />
         <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
           <ActiveStoryCard story={currentStory} num={currentIdx + 1} total={stories.length} />
           <ParticipantsRow

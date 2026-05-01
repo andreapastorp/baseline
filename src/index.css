@@ -148,18 +148,48 @@ textarea.input { resize: none; line-height: 1.5; }
 .toggle-track.on .toggle-thumb { left: 14px; }
 .toggle-label { font-size: 12px; color: var(--muted2); }
 
-/* ── Topbar players ── */
-.topbar-players {
-  display: flex; align-items: center; gap: 0;
+/* ── Sidebar room section ── */
+.sidebar-room {
+  border-top: 1px solid var(--border);
+  flex-shrink: 0;
 }
-.topbar-avatar {
-  width: 22px; height: 22px; border-radius: 50%;
-  background: var(--s3); border: 1.5px solid var(--bg);
-  font-family: var(--font-display); font-size: 10px; font-weight: 700;
+.sidebar-room-header {
+  padding: var(--space-sm) var(--space-md);
+  border-bottom: 1px solid var(--border);
+}
+.sidebar-room-list {
+  padding: var(--space-xs) 0;
+  max-height: 192px;
+  overflow: auto;
+}
+.room-participant {
+  display: flex; align-items: center; gap: var(--space-sm);
+  padding: 5px var(--space-md);
+  transition: opacity 0.1s;
+}
+.room-participant.is-observer { opacity: 0.42; }
+.room-avatar-wrap { position: relative; flex-shrink: 0; }
+.room-avatar {
+  width: 26px; height: 26px; border-radius: 50%;
   display: flex; align-items: center; justify-content: center;
-  color: var(--text2); margin-left: -5px; cursor: default;
+  font-family: var(--font-display); font-size: 11px; font-weight: 700;
+  color: oklch(0.99 0.005 75);
 }
-.topbar-avatar:first-child { margin-left: 0; }
+.room-online-dot {
+  position: absolute; bottom: -1px; right: -1px;
+  width: 7px; height: 7px; border-radius: 50%;
+  background: var(--green);
+  border: 1.5px solid var(--s1);
+}
+.room-name {
+  flex: 1; font-size: 12px; color: var(--text2);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.room-obs-tag {
+  font-family: var(--font-display); font-size: 9px; font-weight: 600;
+  letter-spacing: 0.08em; text-transform: uppercase;
+  color: var(--muted); flex-shrink: 0;
+}
 
 /* ── User chip ── */
 .user-chip { display: flex; align-items: center; gap: var(--space-sm); font-size: 13px; color: var(--muted2); }
@@ -189,11 +219,6 @@ textarea.input { resize: none; line-height: 1.5; }
   line-height: 1;
 }
 .sidebar-list { flex: 1; overflow: auto; padding: var(--space-xs) 0; }
-.sidebar-footer {
-  padding: var(--space-sm) var(--space-md);
-  border-top: 1px solid var(--border);
-  font-size: 11px; color: var(--muted);
-}
 
 /* ── Story row ── */
 .story-row {
