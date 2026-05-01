@@ -1137,8 +1137,8 @@ function CreateRoomView({ displayName: initialName, onDisplayNameChange, onCreat
     <div className="form-view">
       <div className="form-inner">
         <div>
-          <div className="form-heading">New Session</div>
-          <p className="form-sub">Give this session a name so your team knows what to join.</p>
+          <div className="form-heading">New Room</div>
+          <p className="form-sub">Give this room a name so your team knows what to join.</p>
         </div>
         <div>
           <label className="field-label">Your name</label>
@@ -1146,8 +1146,8 @@ function CreateRoomView({ displayName: initialName, onDisplayNameChange, onCreat
             onChange={e => setDisplayName(e.target.value)} />
         </div>
         <div>
-          <label className="field-label">Session name</label>
-          <input className="input" placeholder="e.g. Sprint 42 Planning" value={roomName}
+          <label className="field-label">Room name</label>
+          <input className="input" placeholder="e.g. Baseline Team" value={roomName}
             onChange={e => setRoomName(e.target.value)}
             onKeyDown={e => e.key === 'Enter' && handleCreate()}
             autoFocus />
@@ -1159,7 +1159,7 @@ function CreateRoomView({ displayName: initialName, onDisplayNameChange, onCreat
               <div key={v} className="card-chip">{v}</div>
             ))}
           </div>
-          <div className="card-preview-note">Locked for this session</div>
+          <div className="card-preview-note">Locked for this room</div>
         </div>
         {error && <p style={{ color: 'var(--error)', fontSize: 13, margin: 0 }}>{error}</p>}
         <div style={{ display: 'flex', gap: 8 }}>
@@ -1235,7 +1235,7 @@ function AddStoriesView({ roomName, onStart }) {
         </div>
         <button className="btn btn-green btn-lg" disabled={stories.length === 0 || loading}
           onClick={handleStart} style={{ marginTop: 'auto' }}>
-          {loading ? 'Starting…' : `Start Session (${stories.length} ${stories.length === 1 ? 'story' : 'stories'}) →`}
+          {loading ? 'Starting…' : `Start (${stories.length} ${stories.length === 1 ? 'story' : 'stories'}) →`}
         </button>
       </div>
       <div className="add-stories-list">
