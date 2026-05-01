@@ -599,7 +599,12 @@ function RoomView({ roomName, identity, onLeave }) {
       const ws = new WebSocket(getWsUrl(roomName, token))
       wsRef.current = ws
 
-      ws.onclose = () => {
+      ws.onclose = (e) => {
+        if (e.code === 4001 || e.code === 4003) {
+          localStorage.removeItem(LS_KEY_IDENTITY)
+          onLeave()
+          return
+        }
         if (!unmounted) retryTimer = setTimeout(connect, 2000)
       }
 
