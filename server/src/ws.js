@@ -70,7 +70,19 @@ async function getRoomSnapshot(roomName, connectedParticipantIds) {
 function setup(server) {
   const wss = new WebSocketServer({ server, path: '/ws' })
 
+  // Keep connections alive through proxy idle timeouts
+  const heartbeat = setInterval(() => {
+    wss.clients.forEach(ws => {
+      if (ws.isAlive === false) { ws.terminate(); return }
+      ws.isAlive = false
+      ws.ping()
+    })
+  }, 25000)
+  wss.on('close', () => clearInterval(heartbeat))
+
   wss.on('connection', async (ws, req) => {
+    ws.isAlive = true
+    ws.on('pong', () => { ws.isAlive = true })
     const { query } = parse(req.url, true)
     const { room: roomName, token } = query
 

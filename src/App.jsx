@@ -590,12 +590,20 @@ function RoomView({ roomName, identity, onLeave }) {
   const removeVoteFromStory = (votes, participantId) =>
     (votes || []).filter(v => v.participantId !== participantId)
 
-  // WS connection
+  // WS connection with auto-reconnect
   useEffect(() => {
-    const ws = new WebSocket(getWsUrl(roomName, token))
-    wsRef.current = ws
+    let unmounted = false
+    let retryTimer = null
 
-    ws.onmessage = (e) => {
+    function connect() {
+      const ws = new WebSocket(getWsUrl(roomName, token))
+      wsRef.current = ws
+
+      ws.onclose = () => {
+        if (!unmounted) retryTimer = setTimeout(connect, 2000)
+      }
+
+      ws.onmessage = (e) => {
       const msg = JSON.parse(e.data)
 
       switch (msg.type) {
@@ -730,9 +738,16 @@ function RoomView({ roomName, identity, onLeave }) {
           break
         }
       }
+      }
     }
 
-    return () => ws.close()
+    connect()
+
+    return () => {
+      unmounted = true
+      clearTimeout(retryTimer)
+      wsRef.current?.close()
+    }
   }, [roomName, token])
 
   const wsSend = (msg) => {
