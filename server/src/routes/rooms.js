@@ -2,6 +2,7 @@ const { Router } = require('express')
 const { randomUUID } = require('crypto')
 const db = require('../db')
 const { broadcastToRoom } = require('../ws')
+const storiesRouter = require('./stories')
 
 const router = Router()
 
@@ -99,5 +100,7 @@ router.post('/:name/join', async (req, res) => {
     token,
   })
 })
+
+router.use('/:name/stories', storiesRouter)
 
 module.exports = router
