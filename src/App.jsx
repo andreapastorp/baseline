@@ -982,8 +982,8 @@ function RoomView({ roomName, identity, onLeave }) {
 }
 
 /* ── Landing view ── */
-function LandingView({ displayName, onDisplayNameChange, onCreateRoom, onJoined, inviteRoom }) {
-  const [joinInput, setJoinInput] = useState(inviteRoom || '')
+function LandingView({ displayName, onDisplayNameChange, onCreateRoom, onJoined }) {
+  const [joinInput, setJoinInput] = useState('')
   const [error, setError] = useState(null)
   const [loading, setLoading] = useState(false)
 
@@ -1020,7 +1020,7 @@ function LandingView({ displayName, onDisplayNameChange, onCreateRoom, onJoined,
           <button className="btn btn-primary btn-lg" style={{ width: '100%' }}
             disabled={!displayName.trim()}
             onClick={onCreateRoom}>
-            Create Session
+            Create Room
           </button>
           <div style={{ display: 'flex', gap: 8 }}>
             <input className="input" placeholder="Paste invite link or room name…" style={{ flex: 1 }}
@@ -1033,6 +1033,55 @@ function LandingView({ displayName, onDisplayNameChange, onCreateRoom, onJoined,
             </button>
           </div>
           {error && <p style={{ color: 'var(--error)', fontSize: 13, margin: 0 }}>{error}</p>}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+/* ── Join view (invite link) ── */
+function JoinView({ roomName, displayName, onDisplayNameChange, onJoined, onBack }) {
+  const [error, setError] = useState(null)
+  const [loading, setLoading] = useState(false)
+
+  const handleJoin = async () => {
+    if (!displayName.trim()) return
+    setLoading(true)
+    setError(null)
+    try {
+      const data = await api(`/rooms/${encodeURIComponent(roomName)}/join`, {
+        method: 'POST',
+        body: { displayName: displayName.trim() },
+      })
+      onJoined({ roomName: data.room.name, identity: { token: data.token, participant: data.participant } })
+    } catch (err) {
+      setError(err.message)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  return (
+    <div className="landing">
+      <div className="landing-inner">
+        <h1 className="landing-heading"><em>Baseline</em></h1>
+        <p className="landing-sub">You've been invited to <strong>{roomName}</strong>.</p>
+        <div className="landing-actions">
+          <div>
+            <label className="field-label">Your name</label>
+            <input className="input" placeholder="e.g. Alex" value={displayName}
+              onChange={e => onDisplayNameChange(e.target.value)} autoFocus
+              onKeyDown={e => e.key === 'Enter' && handleJoin()} />
+          </div>
+          {error && <p style={{ color: 'var(--error)', fontSize: 13, margin: 0 }}>{error}</p>}
+          <button className="btn btn-primary btn-lg" style={{ width: '100%' }}
+            disabled={!displayName.trim() || loading}
+            onClick={handleJoin}>
+            {loading ? 'Joining…' : 'Join'}
+          </button>
+          <button className="btn btn-ghost" style={{ width: '100%' }} onClick={onBack}>
+            ← Back to lobby
+          </button>
         </div>
       </div>
     </div>
@@ -1207,7 +1256,9 @@ function AddStoriesView({ roomName, onStart }) {
 
 /* ── Root App ── */
 export default function App() {
-  const inviteRoom = new URLSearchParams(window.location.search).get('room')
+  const [inviteRoom, setInviteRoom] = useState(
+    () => new URLSearchParams(window.location.search).get('room')
+  )
 
   const [displayName, setDisplayName] = useState(
     () => localStorage.getItem('baseline_display_name') || ''
@@ -1216,14 +1267,21 @@ export default function App() {
     try { return JSON.parse(localStorage.getItem(LS_KEY_IDENTITY) || 'null') } catch { return null }
   })
   const [view, setView] = useState(() => {
-    if (inviteRoom) return 'landing'
+    const invite = new URLSearchParams(window.location.search).get('room')
+    if (invite) return 'landing'
     if (identity) return 'room'
     return localStorage.getItem(LS_KEY + '_view') || 'landing'
   })
   const [roomName, setRoomName] = useState(() => {
-    if (inviteRoom) return inviteRoom
+    const invite = new URLSearchParams(window.location.search).get('room')
+    if (invite) return invite
     return identity?.roomName || localStorage.getItem(LS_KEY + '_room') || ''
   })
+
+  const handleClearInvite = () => {
+    setInviteRoom(null)
+    window.history.pushState({}, '', window.location.pathname)
+  }
 
   useEffect(() => {
     localStorage.setItem('baseline_display_name', displayName)
@@ -1255,13 +1313,20 @@ export default function App() {
 
   return (
     <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-      {view === 'landing' && (
+      {view === 'landing' && inviteRoom && (
+        <JoinView
+          roomName={inviteRoom}
+          displayName={displayName}
+          onDisplayNameChange={setDisplayName}
+          onJoined={handleJoined}
+          onBack={handleClearInvite} />
+      )}
+      {view === 'landing' && !inviteRoom && (
         <LandingView
           displayName={displayName}
           onDisplayNameChange={setDisplayName}
           onCreateRoom={() => setView('create')}
-          onJoined={handleJoined}
-          inviteRoom={inviteRoom} />
+          onJoined={handleJoined} />
       )}
       {view === 'create' && (
         <CreateRoomView
