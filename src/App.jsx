@@ -143,39 +143,35 @@ function PCard({ voted, value, revealed, delay = 0 }) {
 }
 
 /* ── Participants row ── */
-function ParticipantsRow({ me, displayVoters, hasVoted, revealedVotes, revealed }) {
-  const votedCount = displayVoters.filter(p => hasVoted.has(p.id)).length
+function ParticipantsRow({ me, displayParticipants, hasVoted, revealedVotes, revealed }) {
+  const voters = displayParticipants.filter(p => p.role === 'voter')
+  const votedCount = voters.filter(p => hasVoted.has(p.id)).length
   return (
     <div className="participants">
       <div className="participants-header">
         <span className="label">Participants</span>
         {!revealed
-          ? <span style={{ fontSize: 12, color: 'var(--muted2)' }}>{votedCount} / {displayVoters.length} voted</span>
+          ? <span style={{ fontSize: 12, color: 'var(--muted2)' }}>{votedCount} / {voters.length} voted</span>
           : <span style={{ fontSize: 12, color: 'var(--green)', fontWeight: 500 }}>Votes revealed</span>
         }
       </div>
       <div style={{ display: 'flex', gap: 24, alignItems: 'flex-end' }}>
-        {displayVoters.map((p, i) => {
+        {displayParticipants.map((p, i) => {
           const isMe = p.id === me?.id
           const voted = hasVoted.has(p.id)
           const val = revealedVotes[p.id] ?? null
           return (
-            <div key={p.id} className="participant-col">
-              <PCard voted={voted} value={val} revealed={revealed} delay={i * 120} />
+            <div key={p.id} className="participant-col" style={{ opacity: p.role === 'observer' ? 0.45 : 1 }}>
+              {p.role === 'observer'
+                ? <div className="pcard-obs-wrap" aria-label={`${p.name} — observer`}><span aria-hidden="true">obs</span></div>
+                : <PCard voted={voted} value={val} revealed={revealed} delay={i * 120} />
+              }
               <span className={`participant-name ${isMe ? 'is-me' : ''}`}>
                 {p.name}{p.isFacilitator ? ' ★' : ''}
               </span>
             </div>
           )
         })}
-        {!revealed && (
-          <div className="vote-dots" style={{ marginLeft: 'auto', alignSelf: 'center' }}>
-            <span className="sr-only">{votedCount} of {displayVoters.length} voted</span>
-            {displayVoters.map(p => (
-              <div key={p.id} className={`vote-dot ${hasVoted.has(p.id) ? 'voted' : 'waiting'}`} aria-hidden="true" />
-            ))}
-          </div>
-        )}
       </div>
     </div>
   )
@@ -229,7 +225,7 @@ function StorySidebar({ stories, currentIdx, isFacilitator, onAdd, onJump, parti
                 <div className="room-avatar" style={{ background: avatarColor(p.id) }}>
                   {p.name[0].toUpperCase()}
                 </div>
-                {p.role === 'voter' && <div className="room-online-dot" />}
+                <div className="room-online-dot" />
               </div>
               <span className="room-name">
                 {p.name}{p.isFacilitator ? ' ★' : ''}
@@ -876,14 +872,14 @@ function RoomView({ roomName, identity, onLeave }) {
   }
 
   // displayVoters: voting phase = connected voters, revealed phase = everyone who cast a vote
-  const displayVoters = phase === 'revealed'
+  const displayParticipants = phase === 'revealed'
     ? (currentStory?.votes ?? []).map(v => ({
         id: v.participantId,
         name: v.participantName,
         role: 'voter',
         isFacilitator: false,
       }))
-    : participants.filter(p => p.role === 'voter')
+    : participants
 
   // Stats for reveal
   const revealedValues = Object.values(revealedVotes)
@@ -970,7 +966,7 @@ function RoomView({ roomName, identity, onLeave }) {
           <ActiveStoryCard story={currentStory} num={currentIdx + 1} total={stories.length} />
           <ParticipantsRow
             me={me}
-            displayVoters={displayVoters}
+            displayParticipants={displayParticipants}
             hasVoted={hasVoted}
             revealedVotes={phase === 'revealed' ? revealedVotes : {}}
             revealed={phase === 'revealed'} />

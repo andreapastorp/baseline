@@ -294,7 +294,7 @@ textarea.input { resize: none; line-height: 1.5; }
 .pcard-inner {
   width: 100%; height: 100%; position: relative;
   transform-style: preserve-3d;
-  transition: transform 0.5s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+  transition: transform 0.5s cubic-bezier(0.16, 1, 0.3, 1);
 }
 .pcard-inner.flipped { transform: rotateY(180deg); }
 .pcard-face {
@@ -315,18 +315,20 @@ textarea.input { resize: none; line-height: 1.5; }
   color: var(--green); font-size: 15px;
   background-image: none;
 }
+.pcard-obs-wrap {
+  width: 40px; height: 56px;
+  border: 1px solid var(--border);
+  display: flex; align-items: center; justify-content: center;
+  font-family: var(--font-display); font-size: 9px; font-weight: 600;
+  letter-spacing: 0.08em; text-transform: uppercase;
+  color: var(--muted);
+}
 .pcard-front-face {
   background: var(--bg);
   border: 1px solid var(--border2);
   font-family: var(--font-display); font-size: 20px; font-weight: 700;
   color: var(--text); transform: rotateY(180deg);
 }
-
-/* ── Vote progress dots ── */
-.vote-dots { display: flex; gap: 3px; align-items: center; }
-.vote-dot { width: 22px; height: 3px; border-radius: 1px; }
-.vote-dot.voted { background: var(--green); }
-.vote-dot.waiting { background: var(--border); }
 
 /* ── Voting cards (selection) ── */
 .voting-section { padding: var(--space-md) var(--space-lg); }
