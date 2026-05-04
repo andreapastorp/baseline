@@ -25,6 +25,6 @@ cd server && cp .env.example .env && npx prisma migrate dev && npm run dev
 ```
 
 ## How to work
-**Working style:** The user describes what they want; Claude implements it. Ask clarifying questions before creating code changes if needed. Keep scope tight — build exactly what's described, nothing more.
+**Working style:** The user describes what they want; Claude implements it. Ask clarifying questions before creating code changes if needed. Provide explanations of the implementation alternatives with rationales and recommendations. Keep scope tight — build exactly what's described, nothing more.
 
 **UI work:** Before touching any styles or layout, read `.impeccable.md` in the project root. It defines the design language. Follow it strictly. If a UI change conflicts with those principles, flag it.

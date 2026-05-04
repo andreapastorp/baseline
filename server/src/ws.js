@@ -34,6 +34,7 @@ function storyShape(s) {
     // Only expose vote values once the story is revealed/agreed — preserve ballot secrecy
     votes: (s.votes || []).map(v => ({
       participantId: v.participantId,
+      participantName: v.participant?.name ?? null,
       ...(s.phase !== 'voting' ? { value: v.value } : { hasVoted: true }),
     })),
   }
@@ -43,7 +44,7 @@ async function getRoomSnapshot(roomName, connectedParticipantIds) {
   const room = await db.room.findUnique({
     where: { name: roomName },
     include: {
-      stories: { include: { votes: true } },
+      stories: { include: { votes: { include: { participant: true } } } },
       participants: true,
     },
   })
@@ -54,8 +55,6 @@ async function getRoomSnapshot(roomName, connectedParticipantIds) {
     stories: room.stories
       .sort((a, b) => a.position - b.position)
       .map(storyShape),
-    // Only include participants who are currently connected, so a joining client
-    // doesn't see stale entries from users who disconnected earlier
     participants: room.participants
       .filter(p => connectedParticipantIds.has(p.id))
       .map(p => ({
@@ -175,7 +174,7 @@ function setup(server) {
           broadcastToRoom(roomName, {
             type: 'vote:reveal',
             storyId,
-            votes: votes.map(v => ({ participantId: v.participantId, value: v.value })),
+            votes: votes.map(v => ({ participantId: v.participantId, participantName: v.participant.name, value: v.value })),
           })
           break
         }

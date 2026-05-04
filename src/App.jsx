@@ -143,42 +143,25 @@ function PCard({ voted, value, revealed, delay = 0 }) {
 }
 
 /* ── Participants row ── */
-function ParticipantsRow({ me, participants, hasVoted, revealedVotes, revealed }) {
-  const voters = participants.filter(p => p.role === 'voter')
-  const votedCount = voters.filter(p => hasVoted.has(p.id)).length
+function ParticipantsRow({ me, displayVoters, hasVoted, revealedVotes, revealed }) {
+  const votedCount = displayVoters.filter(p => hasVoted.has(p.id)).length
   return (
     <div className="participants">
       <div className="participants-header">
         <span className="label">Participants</span>
         {!revealed
-          ? <span style={{ fontSize: 12, color: 'var(--muted2)' }}>{votedCount} / {voters.length} voted</span>
+          ? <span style={{ fontSize: 12, color: 'var(--muted2)' }}>{votedCount} / {displayVoters.length} voted</span>
           : <span style={{ fontSize: 12, color: 'var(--green)', fontWeight: 500 }}>Votes revealed</span>
         }
       </div>
       <div style={{ display: 'flex', gap: 24, alignItems: 'flex-end' }}>
-        {participants.map((p, i) => {
+        {displayVoters.map((p, i) => {
           const isMe = p.id === me?.id
           const voted = hasVoted.has(p.id)
           const val = revealedVotes[p.id] ?? null
           return (
-            <div key={p.id} className="participant-col"
-              style={{ opacity: p.role === 'observer' ? 0.4 : 1 }}>
-              {p.role === 'voter'
-                ? <PCard voted={voted} value={val} revealed={revealed} delay={i * 120} />
-                : <div
-                    aria-label={`${p.name} — observer`}
-                    style={{
-                      width: 40, height: 56,
-                      border: '1px solid var(--border)',
-                      background: 'var(--s2)',
-                      display: 'flex', alignItems: 'center', justifyContent: 'center',
-                      fontFamily: 'var(--font-display)', fontSize: 9, fontWeight: 600,
-                      letterSpacing: '0.06em', color: 'var(--muted)',
-                      textTransform: 'uppercase',
-                    }}>
-                    <span aria-hidden="true">obs</span>
-                  </div>
-              }
+            <div key={p.id} className="participant-col">
+              <PCard voted={voted} value={val} revealed={revealed} delay={i * 120} />
               <span className={`participant-name ${isMe ? 'is-me' : ''}`}>
                 {p.name}{p.isFacilitator ? ' ★' : ''}
               </span>
@@ -187,8 +170,8 @@ function ParticipantsRow({ me, participants, hasVoted, revealedVotes, revealed }
         })}
         {!revealed && (
           <div className="vote-dots" style={{ marginLeft: 'auto', alignSelf: 'center' }}>
-            <span className="sr-only">{votedCount} of {voters.length} voted</span>
-            {voters.map(p => (
+            <span className="sr-only">{votedCount} of {displayVoters.length} voted</span>
+            {displayVoters.map(p => (
               <div key={p.id} className={`vote-dot ${hasVoted.has(p.id) ? 'voted' : 'waiting'}`} aria-hidden="true" />
             ))}
           </div>
@@ -621,6 +604,9 @@ function RoomView({ roomName, identity, onLeave }) {
     function connect() {
       const ws = new WebSocket(getWsUrl(roomName, token))
       wsRef.current = ws
+      let didOpen = false
+
+      ws.onopen = () => { didOpen = true }
 
       ws.onclose = (e) => {
         if (e.code === 4001 || e.code === 4003) {
@@ -628,7 +614,7 @@ function RoomView({ roomName, identity, onLeave }) {
           onLeave()
           return
         }
-        if (!unmounted) retryTimer = setTimeout(connect, 2000)
+        if (!unmounted && didOpen) retryTimer = setTimeout(connect, 2000)
       }
 
       ws.onmessage = (e) => {
@@ -686,7 +672,7 @@ function RoomView({ roomName, identity, onLeave }) {
 
         case 'vote:reveal': {
           const { storyId, votes } = msg
-          const updatedVotes = votes.map(v => ({ participantId: v.participantId, value: v.value }))
+          const updatedVotes = votes.map(v => ({ participantId: v.participantId, participantName: v.participantName, value: v.value }))
           setStories(ss => {
             const storyIdx = ss.findIndex(s => s.id === storyId)
             if (storyIdx === -1) return ss
@@ -746,10 +732,7 @@ function RoomView({ roomName, identity, onLeave }) {
         }
 
         case 'participant:joined': {
-          setParticipants(pp => {
-            if (pp.find(p => p.id === msg.participant.id)) return pp
-            return [...pp, msg.participant]
-          })
+          setParticipants(pp => pp.find(p => p.id === msg.participant.id) ? pp : [...pp, msg.participant])
           break
         }
 
@@ -892,6 +875,16 @@ function RoomView({ roomName, identity, onLeave }) {
     setShowJira(false)
   }
 
+  // displayVoters: voting phase = connected voters, revealed phase = everyone who cast a vote
+  const displayVoters = phase === 'revealed'
+    ? (currentStory?.votes ?? []).map(v => ({
+        id: v.participantId,
+        name: v.participantName,
+        role: 'voter',
+        isFacilitator: false,
+      }))
+    : participants.filter(p => p.role === 'voter')
+
   // Stats for reveal
   const revealedValues = Object.values(revealedVotes)
   const numVotes = revealedValues.filter(v => typeof v === 'number')
@@ -899,7 +892,7 @@ function RoomView({ roomName, identity, onLeave }) {
     ? (() => {
         const maxVal = Math.max(...numVotes)
         const pid = Object.entries(revealedVotes).find(([, v]) => v === maxVal)?.[0]
-        return participants.find(p => p.id === pid)?.name
+        return currentStory?.votes.find(v => v.participantId === pid)?.participantName ?? null
       })()
     : null
 
@@ -977,7 +970,7 @@ function RoomView({ roomName, identity, onLeave }) {
           <ActiveStoryCard story={currentStory} num={currentIdx + 1} total={stories.length} />
           <ParticipantsRow
             me={me}
-            participants={participants}
+            displayVoters={displayVoters}
             hasVoted={hasVoted}
             revealedVotes={phase === 'revealed' ? revealedVotes : {}}
             revealed={phase === 'revealed'} />
