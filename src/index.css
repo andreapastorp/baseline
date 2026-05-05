@@ -479,6 +479,24 @@ textarea.input { resize: none; line-height: 1.5; }
 }
 .jira-issue-title { font-size: 13px; font-weight: 500; color: var(--text); margin-bottom: 2px; }
 .jira-issue-desc { font-size: 12px; color: var(--muted2); }
+.jira-issue-row.already-added { opacity: 0.4; cursor: default; pointer-events: none; }
+.jira-issue-row.already-added .jira-checkbox { border-color: var(--border); color: var(--muted); font-size: 12px; }
+
+.jira-search-wrap { position: relative; display: flex; align-items: center; }
+.jira-search-wrap .input { flex: 1; padding-right: 48px; }
+.jira-mode-label {
+  position: absolute; right: 10px;
+  font-family: var(--font-display); font-size: 10px; font-weight: 700;
+  letter-spacing: 0.08em; text-transform: uppercase;
+  color: var(--muted); pointer-events: none; user-select: none;
+}
+
+@keyframes jira-pulse { 0%, 100% { opacity: 0.4 } 50% { opacity: 0.9 } }
+.jira-skeleton {
+  height: 52px; border-radius: var(--radius);
+  background: var(--s1); border: 1px solid var(--border);
+  animation: jira-pulse 1.2s ease-in-out infinite;
+}
 
 /* ── Landing ── */
 .landing {

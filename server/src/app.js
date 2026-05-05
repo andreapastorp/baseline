@@ -2,6 +2,7 @@ const express = require('express')
 const cors = require('cors')
 const path = require('path')
 const roomsRouter = require('./routes/rooms')
+const jiraRouter = require('./routes/jira')
 
 const app = express()
 const isProd = process.env.NODE_ENV === 'production'
@@ -10,6 +11,7 @@ if (!isProd) app.use(cors())
 app.use(express.json())
 
 app.use('/api/rooms', roomsRouter)
+app.use('/api/jira', jiraRouter)
 app.get('/api/health', (_req, res) => res.json({ ok: true }))
 
 if (isProd) {

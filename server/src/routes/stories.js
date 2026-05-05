@@ -12,6 +12,7 @@ function storyShape(s) {
     points: s.points,
     position: s.position,
     phase: s.phase,
+    jiraKey: s.jiraKey ?? null,
     votes: (s.votes || []).map(v => ({ participantId: v.participantId, value: v.value })),
   }
 }
@@ -54,10 +55,10 @@ router.post('/batch', async (req, res) => {
 
   let position = await nextPosition(room.id)
   const stories = []
-  for (const { title, desc = '' } of items) {
+  for (const { title, desc = '', jiraKey = null } of items) {
     if (!title) continue
     const story = await db.story.create({
-      data: { roomId: room.id, title, desc, position: position++ },
+      data: { roomId: room.id, title, desc, position: position++, ...(jiraKey ? { jiraKey } : {}) },
       include: { votes: true },
     })
     stories.push(storyShape(story))

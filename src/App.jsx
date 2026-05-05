@@ -69,16 +69,9 @@ function avatarColor(id) {
   for (const c of String(id)) h = (h * 31 + c.charCodeAt(0)) & 0xffff
   return AVATAR_COLORS[h % AVATAR_COLORS.length]
 }
-const JIRA_ISSUES = [
-  { key: 'AXN-101', title: 'User authentication flow',     desc: 'Implement OAuth 2.0 login with Google and GitHub' },
-  { key: 'AXN-102', title: 'Dashboard analytics widget',   desc: 'Show active users, events, and conversion on home' },
-  { key: 'AXN-103', title: 'Export to CSV',               desc: 'Allow bulk data export from all table views' },
-  { key: 'AXN-104', title: 'Dark mode support',           desc: 'Theme toggle with system preference detection' },
-  { key: 'AXN-105', title: 'Mobile responsive nav',       desc: 'Collapsible sidebar and touch-friendly controls' },
-  { key: 'AXN-106', title: 'Email notification settings', desc: 'Per-user preference controls for all notification types' },
-]
 const LS_KEY = 'baseline_planning_state'
 const LS_KEY_IDENTITY = 'baseline_identity'
+const LS_JIRA_KEY = 'baseline_jira_auth'
 
 /* ── API helper ── */
 async function api(path, options = {}) {
@@ -367,67 +360,193 @@ function AgreeScore({ revealedVotes, existingScore, onAgree }) {
   )
 }
 
+/* ── Jira helpers ── */
+const JQL_RE = /\b(AND|OR|NOT|ORDER\s+BY|project|sprint|status|assignee|reporter|priority|issuetype|fixVersion|component|label|created|updated|due)\b|[=!~]/i
+const isJql = q => JQL_RE.test(q.trim())
+
+function getJiraAuth() {
+  try { return JSON.parse(localStorage.getItem(LS_JIRA_KEY) || 'null') } catch { return null }
+}
+
+function saveJiraAuth(auth) {
+  if (auth) localStorage.setItem(LS_JIRA_KEY, JSON.stringify(auth))
+  else localStorage.removeItem(LS_JIRA_KEY)
+}
+
+async function ensureFreshToken(auth) {
+  if (!auth) return null
+  if (auth.expiresAt - Date.now() > 60_000) return auth
+  try {
+    const res = await fetch('/api/jira/refresh', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ refreshToken: auth.refreshToken }),
+    })
+    if (!res.ok) return null
+    const data = await res.json()
+    const updated = { ...auth, accessToken: data.accessToken, refreshToken: data.refreshToken, expiresAt: data.expiresAt }
+    saveJiraAuth(updated)
+    return updated
+  } catch { return null }
+}
+
 /* ── Jira Import Modal ── */
-function JiraModal({ onImport, onClose }) {
-  const [selected, setSelected] = useState(new Set())
+function JiraModal({ onImport, onClose, existingJiraKeys = new Set() }) {
+  const [auth, setAuth] = useState(() => getJiraAuth())
   const [query, setQuery] = useState('')
+  const [issues, setIssues] = useState([])
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState(null)
+  const [selected, setSelected] = useState(new Set())
   const modalRef = useModalA11y(onClose)
-  const toggle = k => setSelected(s => { const n = new Set(s); n.has(k) ? n.delete(k) : n.add(k); return n })
-  const filtered = JIRA_ISSUES.filter(i =>
-    !query.trim() ||
-    i.title.toLowerCase().includes(query.toLowerCase()) ||
-    i.key.toLowerCase().includes(query.toLowerCase()) ||
-    i.desc.toLowerCase().includes(query.toLowerCase())
-  )
+  const debounceRef = useRef(null)
+  const mode = isJql(query) ? 'JQL' : 'Text'
+
+  const disconnect = () => { saveJiraAuth(null); setAuth(null); setIssues([]); setSelected(new Set()) }
+
+  const fetchIssues = async (q, currentAuth) => {
+    setLoading(true)
+    setError(null)
+    try {
+      const fresh = await ensureFreshToken(currentAuth)
+      if (!fresh) { setAuth(null); saveJiraAuth(null); return }
+      setAuth(fresh)
+      const res = await fetch(`/api/jira/issues?q=${encodeURIComponent(q)}&cloudId=${encodeURIComponent(fresh.cloudId)}`, {
+        headers: { Authorization: `Bearer ${fresh.accessToken}` },
+      })
+      if (res.status === 401) { setAuth(null); saveJiraAuth(null); setError('Session expired — reconnect to Jira.'); return }
+      if (!res.ok) { setError('Failed to load issues.'); return }
+      const data = await res.json()
+      setIssues(data.issues || [])
+    } catch { setError('Failed to load issues.') }
+    finally { setLoading(false) }
+  }
+
+  useEffect(() => {
+    if (!auth) return
+    if (!query.trim()) { setIssues([]); return }
+    if (isJql(query)) return // JQL fires on Enter only
+    clearTimeout(debounceRef.current)
+    debounceRef.current = setTimeout(() => fetchIssues(query, auth), 300)
+    return () => clearTimeout(debounceRef.current)
+  }, [query, auth])
+
+  const handleKeyDown = (e) => {
+    if (e.key === 'Enter' && isJql(query) && auth) fetchIssues(query, auth)
+  }
+
+  const toggle = key => {
+    if (existingJiraKeys.has(key)) return
+    setSelected(s => { const n = new Set(s); n.has(key) ? n.delete(key) : n.add(key); return n })
+  }
+
+  const handleImport = () => {
+    const picked = issues.filter(i => selected.has(i.key))
+    onImport(picked)
+  }
+
+  const jiraAuthUrl = import.meta.env.DEV
+    ? 'http://localhost:3001/api/jira/auth'
+    : '/api/jira/auth'
+
   return (
     <div className="modal-bg" onClick={onClose}>
       <div className="modal" ref={modalRef} role="dialog" aria-modal="true" aria-labelledby="jira-modal-title" onClick={e => e.stopPropagation()}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <div className="modal-title" id="jira-modal-title">Import from Jira</div>
-          <button className="btn btn-ghost btn-sm" onClick={onClose} aria-label="Close">✕</button>
-        </div>
-        <div style={{ display: 'flex', gap: 8 }}>
-          <input className="input" placeholder="Search or JQL (e.g. sprint = active)…"
-            value={query} onChange={e => setQuery(e.target.value)} autoFocus />
-          {query && <button className="btn btn-ghost btn-sm" onClick={() => setQuery('')}>✕</button>}
-        </div>
-        <div style={{ fontSize: 12, color: 'var(--muted)' }}>
-          Project: <strong style={{ color: 'var(--text2)' }}>Team Axon</strong>
-          {' · '}{filtered.length} issue{filtered.length !== 1 ? 's' : ''}
-        </div>
-        <div className="jira-issues">
-          {filtered.length === 0 && (
-            <div style={{ color: 'var(--muted)', fontSize: 13, textAlign: 'center', padding: '24px 0' }}>
-              No issues match your search.
-            </div>
-          )}
-          {filtered.map(issue => (
-            <div key={issue.key}
-              className={`jira-issue-row ${selected.has(issue.key) ? 'selected' : ''}`}
-              role="checkbox"
-              aria-checked={selected.has(issue.key)}
-              tabIndex="0"
-              onClick={() => toggle(issue.key)}
-              onKeyDown={e => { if (e.key === ' ' || e.key === 'Enter') { e.preventDefault(); toggle(issue.key) } }}>
-              <div className="jira-checkbox" aria-hidden="true">{selected.has(issue.key) ? '✓' : ''}</div>
-              <div>
-                <div className="jira-key">{issue.key}</div>
-                <div className="jira-issue-title">{issue.title}</div>
-                <div className="jira-issue-desc">{issue.desc}</div>
-              </div>
-            </div>
-          ))}
-        </div>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <span style={{ fontSize: 13, color: 'var(--muted2)' }}>{selected.size} selected</span>
-          <div style={{ display: 'flex', gap: 8 }}>
-            <button className="btn btn-ghost" onClick={onClose}>Cancel</button>
-            <button className="btn btn-primary" disabled={!selected.size}
-              onClick={() => onImport(JIRA_ISSUES.filter(i => selected.has(i.key)))}>
-              Import {selected.size > 0 ? selected.size : ''} {selected.size === 1 ? 'story' : 'stories'}
-            </button>
+          <div className="modal-title" id="jira-modal-title">Add from Jira</div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+            {auth && (
+              <button className="btn btn-ghost btn-sm" onClick={disconnect}
+                style={{ fontSize: 11, color: 'var(--muted)', padding: '2px 6px' }}>
+                {auth.email} · disconnect
+              </button>
+            )}
+            <button className="btn btn-ghost btn-sm" onClick={onClose} aria-label="Close">✕</button>
           </div>
         </div>
+
+        {!auth ? (
+          <div style={{ padding: '24px 0', display: 'flex', flexDirection: 'column', gap: 12 }}>
+            <p style={{ fontSize: 13, color: 'var(--muted)', margin: 0 }}>
+              Connect your Atlassian account to search and import issues.
+            </p>
+            <div>
+              <a href={jiraAuthUrl} className="btn btn-primary btn-sm" style={{ textDecoration: 'none', display: 'inline-block' }}>
+                Authorize Jira →
+              </a>
+            </div>
+          </div>
+        ) : (
+          <>
+            <div className="jira-search-wrap">
+              <input
+                className="input"
+                placeholder="Search or enter JQL…"
+                value={query}
+                onChange={e => setQuery(e.target.value)}
+                onKeyDown={handleKeyDown}
+                autoFocus
+              />
+              <span className="jira-mode-label">{mode}</span>
+            </div>
+            {mode === 'JQL' && (
+              <p style={{ fontSize: 11, color: 'var(--muted)', margin: '0 0 4px', opacity: 0.7 }}>
+                Press Enter to run query
+              </p>
+            )}
+            {error && <p style={{ fontSize: 12, color: 'var(--error)', margin: 0 }}>{error}</p>}
+
+            <div className="jira-issues">
+              {loading && [0, 1, 2].map(i => (
+                <div key={i} className="jira-skeleton" style={{ animationDelay: `${i * 80}ms` }} />
+              ))}
+              {!loading && !error && issues.length === 0 && query.trim() && (
+                <div style={{ color: 'var(--muted)', fontSize: 13, padding: '20px 0' }}>No issues found.</div>
+              )}
+              {!loading && !query.trim() && (
+                <div style={{ color: 'var(--muted)', fontSize: 13, padding: '20px 0' }}>
+                  Search for issues or enter a JQL query.
+                </div>
+              )}
+              {!loading && issues.map(issue => {
+                const alreadyAdded = existingJiraKeys.has(issue.key)
+                const isSelected = selected.has(issue.key)
+                return (
+                  <div
+                    key={issue.key}
+                    className={`jira-issue-row ${isSelected ? 'selected' : ''} ${alreadyAdded ? 'already-added' : ''}`}
+                    role={alreadyAdded ? undefined : 'checkbox'}
+                    aria-checked={alreadyAdded ? undefined : isSelected}
+                    tabIndex={alreadyAdded ? -1 : 0}
+                    onClick={() => toggle(issue.key)}
+                    onKeyDown={e => { if (!alreadyAdded && (e.key === ' ' || e.key === 'Enter')) { e.preventDefault(); toggle(issue.key) } }}
+                  >
+                    <div className="jira-checkbox" aria-hidden="true">
+                      {alreadyAdded ? '·' : isSelected ? '✓' : ''}
+                    </div>
+                    <div>
+                      <div className="jira-key">{issue.key}</div>
+                      <div className="jira-issue-title">{issue.title}</div>
+                      {issue.desc && <div className="jira-issue-desc">{issue.desc}</div>}
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <span style={{ fontSize: 13, color: 'var(--muted2)' }}>
+                {selected.size > 0 ? `${selected.size} selected` : ''}
+              </span>
+              <div style={{ display: 'flex', gap: 8 }}>
+                <button className="btn btn-ghost" onClick={onClose}>Cancel</button>
+                <button className="btn btn-primary" disabled={!selected.size} onClick={handleImport}>
+                  Add to room{selected.size > 0 ? ` (${selected.size})` : ''}
+                </button>
+              </div>
+            </div>
+          </>
+        )}
       </div>
     </div>
   )
@@ -863,7 +982,7 @@ function RoomView({ roomName, identity, onLeave }) {
     try {
       await api(`/rooms/${encodeURIComponent(roomName)}/stories/batch`, {
         method: 'POST',
-        body: issues.map(i => ({ title: i.title, desc: i.desc })),
+        body: issues.map(i => ({ title: i.title, desc: i.desc, jiraKey: i.key })),
       })
     } catch (err) {
       console.error('Failed to import stories:', err)
@@ -1008,6 +1127,7 @@ function RoomView({ roomName, identity, onLeave }) {
       )}
       {showJira && (
         <JiraModal
+          existingJiraKeys={new Set(stories.filter(s => s.jiraKey).map(s => s.jiraKey))}
           onImport={handleImportJira}
           onClose={() => setShowJira(false)} />
       )}
@@ -1276,9 +1396,10 @@ function AddStoriesView({ roomName, onStart }) {
       </div>
       {showJira && (
         <JiraModal
+          existingJiraKeys={new Set(stories.filter(s => s.jiraKey).map(s => s.jiraKey))}
           onImport={issues => {
             setStories(ss => [...ss, ...issues.map(i => ({
-              id: Date.now() + Math.random(), title: i.title, desc: i.desc,
+              id: Date.now() + Math.random(), title: i.title, desc: i.desc, jiraKey: i.key,
             }))])
             setShowJira(false)
           }}
@@ -1294,6 +1415,23 @@ export default function App() {
     () => new URLSearchParams(window.location.search).get('room')
   )
 
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search)
+    const accessToken = params.get('jira_access_token')
+    if (!accessToken) return
+    saveJiraAuth({
+      accessToken,
+      refreshToken: params.get('jira_refresh_token'),
+      cloudId: params.get('jira_cloud_id'),
+      email: params.get('jira_email'),
+      expiresAt: Number(params.get('jira_expires_at')),
+    })
+    const clean = new URLSearchParams(window.location.search)
+    ;['jira_access_token', 'jira_refresh_token', 'jira_cloud_id', 'jira_email', 'jira_expires_at'].forEach(k => clean.delete(k))
+    const qs = clean.toString()
+    window.history.replaceState({}, '', qs ? `?${qs}` : window.location.pathname)
+  }, [])
+
   const [displayName, setDisplayName] = useState(
     () => localStorage.getItem('baseline_display_name') || ''
   )
@@ -1303,8 +1441,10 @@ export default function App() {
   const [view, setView] = useState(() => {
     const invite = new URLSearchParams(window.location.search).get('room')
     if (invite) return 'landing'
+    const savedView = localStorage.getItem(LS_KEY + '_view')
+    if (identity && savedView === 'stories') return 'stories'
     if (identity) return 'room'
-    return localStorage.getItem(LS_KEY + '_view') || 'landing'
+    return savedView || 'landing'
   })
   const [roomName, setRoomName] = useState(() => {
     const invite = new URLSearchParams(window.location.search).get('room')

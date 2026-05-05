@@ -35,6 +35,7 @@ model Story {
   points    String?
   position  Int
   phase     String   @default("voting")
+  jiraKey   String?
   votes     Vote[]
   createdAt DateTime @default(now())
 }
