@@ -12,8 +12,15 @@ function getConfig() {
   const clientId = process.env.JIRA_CLIENT_ID
   const clientSecret = process.env.JIRA_CLIENT_SECRET
   const redirectUri = process.env.JIRA_REDIRECT_URI
-  const frontendUrl = process.env.JIRA_FRONTEND_URL || 'http://localhost:5173'
-  return { clientId, clientSecret, redirectUri, frontendUrl }
+  return { clientId, clientSecret, redirectUri }
+}
+
+function getFrontendOrigin(req) {
+  const ref = req.headers.referer || req.headers.referrer
+  if (ref) {
+    try { return new URL(ref).origin } catch {}
+  }
+  return `${req.protocol}://${req.get('host')}`
 }
 
 // GET /api/jira/auth — redirect to Atlassian OAuth consent
@@ -22,6 +29,8 @@ router.get('/auth', (req, res) => {
   if (!clientId || !redirectUri) {
     return res.status(500).json({ error: 'Jira integration not configured' })
   }
+  const origin = getFrontendOrigin(req)
+  const state = Buffer.from(JSON.stringify({ origin })).toString('base64')
   const params = new URLSearchParams({
     audience: 'api.atlassian.com',
     client_id: clientId,
@@ -29,14 +38,21 @@ router.get('/auth', (req, res) => {
     redirect_uri: redirectUri,
     response_type: 'code',
     prompt: 'consent',
+    state,
   })
   res.redirect(`https://auth.atlassian.com/authorize?${params}`)
 })
 
 // GET /api/jira/callback — exchange code for tokens, redirect to frontend
 router.get('/callback', async (req, res) => {
-  const { code, error } = req.query
-  const { clientId, clientSecret, redirectUri, frontendUrl } = getConfig()
+  const { code, error, state } = req.query
+  const { clientId, clientSecret, redirectUri } = getConfig()
+
+  let frontendUrl = `${req.protocol}://${req.get('host')}`
+  try {
+    const decoded = JSON.parse(Buffer.from(state || '', 'base64').toString())
+    if (decoded.origin) frontendUrl = decoded.origin
+  } catch {}
 
   if (error) {
     return res.redirect(`${frontendUrl}/?jira_error=${encodeURIComponent(error)}`)
