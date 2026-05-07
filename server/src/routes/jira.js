@@ -162,9 +162,11 @@ router.get('/issues', async (req, res) => {
     let issues
     if (isJql(q)) {
       const jql = q.trim() || 'ORDER BY created DESC'
-      const url = `https://api.atlassian.com/ex/jira/${cloudId}/rest/api/3/search?jql=${encodeURIComponent(jql)}&maxResults=20&fields=summary,description`
+      const url = `https://api.atlassian.com/ex/jira/${cloudId}/rest/api/3/search/jql`
       const r = await fetch(url, {
-        headers: { Authorization: `Bearer ${accessToken}`, Accept: 'application/json' },
+        method: 'POST',
+        headers: { Authorization: `Bearer ${accessToken}`, Accept: 'application/json', 'Content-Type': 'application/json' },
+        body: JSON.stringify({ jql, maxResults: 20, fields: ['summary', 'description'] }),
       })
       if (r.status === 401) return res.status(401).json({ error: 'unauthorized' })
       if (!r.ok) return res.status(r.status).json({ error: 'jira_error' })
