@@ -248,6 +248,18 @@ textarea.input { resize: none; line-height: 1.5; }
 }
 .story-arrow { font-size: 9px; color: var(--accent); flex-shrink: 0; }
 
+.story-drag-handle {
+  flex-shrink: 0; width: 14px; display: flex; align-items: center; align-self: center;
+  color: var(--border); opacity: 0; cursor: grab;
+  transition: opacity 0.1s;
+}
+.story-row:hover .story-drag-handle { opacity: 1; }
+.story-row.dragging { opacity: 0.35; }
+.story-drop-indicator {
+  height: 2px; margin: 0 var(--space-md);
+  background: var(--accent); pointer-events: none;
+}
+
 /* ── Active story ── */
 .active-story {
   padding: var(--space-lg) var(--space-lg) var(--space-md);

@@ -226,6 +226,19 @@ function setup(server) {
           broadcastToRoom(roomName, { type: 'observer:toggled', participantId, role })
           break
         }
+
+        case 'story:reorder': {
+          if (!p.isFacilitator) return
+          const { storyIds } = msg
+          if (!Array.isArray(storyIds) || storyIds.length === 0) return
+
+          await db.$transaction(storyIds.map((id, i) =>
+            db.story.update({ where: { id }, data: { position: i } })
+          ))
+
+          broadcastToRoom(roomName, { type: 'story:reorder', storyIds }, ws)
+          break
+        }
       }
     })
 

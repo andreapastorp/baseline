@@ -171,26 +171,79 @@ function ParticipantsRow({ me, displayParticipants, hasVoted, revealedVotes, rev
 }
 
 /* ── Story sidebar row ── */
-function StoryRow({ story, active, onClick }) {
+function StoryRow({ story, active, onClick, draggable, onDragStart, onDragOver, onDragEnd, isDragging, showDropBefore }) {
   return (
-    <button
-      className={`story-row ${active ? 'active' : ''} ${story.points !== null ? 'done' : ''}`}
-      onClick={onClick}
-      aria-current={active ? 'true' : undefined}
-    >
-      <span className="story-row-num">{story.num}</span>
-      <span className="story-title">{story.title}</span>
-      {story.points !== null
-        ? <span className="story-pts">{story.points}</span>
-        : active
-          ? <span className="story-arrow" aria-hidden="true">▶</span>
-          : null}
-    </button>
+    <>
+      {showDropBefore && <div className="story-drop-indicator" />}
+      <button
+        className={`story-row ${active ? 'active' : ''} ${story.points !== null ? 'done' : ''} ${isDragging ? 'dragging' : ''}`}
+        onClick={onClick}
+        aria-current={active ? 'true' : undefined}
+        draggable={draggable}
+        onDragStart={onDragStart}
+        onDragOver={onDragOver}
+        onDragEnd={onDragEnd}
+      >
+        {draggable && (
+          <span className="story-drag-handle" aria-label="Drag to reorder">
+            <svg width="8" height="12" viewBox="0 0 8 12" fill="currentColor">
+              <circle cx="2" cy="2" r="1.2"/><circle cx="6" cy="2" r="1.2"/>
+              <circle cx="2" cy="6" r="1.2"/><circle cx="6" cy="6" r="1.2"/>
+              <circle cx="2" cy="10" r="1.2"/><circle cx="6" cy="10" r="1.2"/>
+            </svg>
+          </span>
+        )}
+        <span className="story-row-num">{story.num}</span>
+        <span className="story-title">{story.title}</span>
+        {story.points !== null
+          ? <span className="story-pts">{story.points}</span>
+          : active
+            ? <span className="story-arrow" aria-hidden="true">▶</span>
+            : null}
+      </button>
+    </>
   )
 }
 
+function reorderStories(stories, fromIdx, dropIdx) {
+  const result = [...stories]
+  const [item] = result.splice(fromIdx, 1)
+  const insertAt = dropIdx > fromIdx ? dropIdx - 1 : dropIdx
+  result.splice(insertAt, 0, item)
+  return result
+}
+
 /* ── Story sidebar ── */
-function StorySidebar({ stories, currentIdx, isFacilitator, onAdd, onJump, participants, me }) {
+function StorySidebar({ stories, currentIdx, isFacilitator, onAdd, onJump, onReorder, participants, me }) {
+  const [dragIdx, setDragIdx] = useState(null)
+  const [dropIdx, setDropIdx] = useState(null)
+
+  function handleDragStart(e, i) {
+    setDragIdx(i)
+    e.dataTransfer.effectAllowed = 'move'
+  }
+
+  function handleDragOver(e, i) {
+    e.preventDefault()
+    e.dataTransfer.dropEffect = 'move'
+    const rect = e.currentTarget.getBoundingClientRect()
+    setDropIdx(e.clientY < rect.top + rect.height / 2 ? i : i + 1)
+  }
+
+  function handleDrop(e) {
+    e.preventDefault()
+    if (dragIdx === null || dropIdx === null) { setDragIdx(null); setDropIdx(null); return }
+    const reordered = reorderStories(stories, dragIdx, dropIdx)
+    onReorder(reordered.map(s => s.id))
+    setDragIdx(null)
+    setDropIdx(null)
+  }
+
+  function handleDragEnd() {
+    setDragIdx(null)
+    setDropIdx(null)
+  }
+
   return (
     <div className="sidebar">
       <div className="sidebar-header">
@@ -201,11 +254,24 @@ function StorySidebar({ stories, currentIdx, isFacilitator, onAdd, onJump, parti
           )}
         </div>
       </div>
-      <div className="sidebar-list">
+      <div className="sidebar-list" onDrop={handleDrop} onDragOver={e => e.preventDefault()}>
         {stories.map((s, i) => (
-          <StoryRow key={s.id} story={{ ...s, num: i + 1 }} active={i === currentIdx}
-            onClick={() => onJump && onJump(i)} />
+          <StoryRow
+            key={s.id}
+            story={{ ...s, num: i + 1 }}
+            active={i === currentIdx}
+            onClick={() => onJump && onJump(i)}
+            draggable={isFacilitator}
+            onDragStart={isFacilitator ? e => handleDragStart(e, i) : undefined}
+            onDragOver={isFacilitator ? e => handleDragOver(e, i) : undefined}
+            onDragEnd={isFacilitator ? handleDragEnd : undefined}
+            isDragging={dragIdx === i}
+            showDropBefore={dropIdx === i && dragIdx !== i && dragIdx !== i - 1}
+          />
         ))}
+        {dropIdx === stories.length && dragIdx !== stories.length - 1 && (
+          <div className="story-drop-indicator" />
+        )}
       </div>
       <div className="sidebar-room">
         <div className="sidebar-room-header">
@@ -846,6 +912,15 @@ function RoomView({ roomName, identity, onLeave }) {
           break
         }
 
+        case 'story:reorder': {
+          const { storyIds } = msg
+          setStories(ss => {
+            const map = new Map(ss.map(s => [s.id, s]))
+            return storyIds.map((id, i) => ({ ...map.get(id), position: i })).filter(s => s.id)
+          })
+          break
+        }
+
         case 'participant:joined': {
           setParticipants(pp => pp.find(p => p.id === msg.participant.id) ? pp : [...pp, msg.participant])
           break
@@ -1079,6 +1154,13 @@ function RoomView({ roomName, identity, onLeave }) {
           isFacilitator={me.isFacilitator}
           onAdd={() => setShowAddModal(true)}
           onJump={handleJump}
+          onReorder={orderedIds => {
+            setStories(ss => {
+              const map = new Map(ss.map(s => [s.id, s]))
+              return orderedIds.map((id, i) => ({ ...map.get(id), position: i }))
+            })
+            wsSend({ type: 'story:reorder', storyIds: orderedIds })
+          }}
           participants={participants}
           me={me} />
         <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
