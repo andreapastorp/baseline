@@ -916,7 +916,12 @@ function RoomView({ roomName, identity, onLeave }) {
           const { storyIds } = msg
           setStories(ss => {
             const map = new Map(ss.map(s => [s.id, s]))
-            return storyIds.map((id, i) => ({ ...map.get(id), position: i })).filter(s => s.id)
+            const reordered = storyIds.map((id, i) => ({ ...map.get(id), position: i })).filter(s => s.id)
+            const newCurrent = reordered[currentIdxRef.current]
+            if (newCurrent) {
+              setMyVote(myVotesRef.current.get(newCurrent.id) ?? null)
+            }
+            return reordered
           })
           break
         }
