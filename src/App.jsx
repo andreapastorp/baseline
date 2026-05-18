@@ -171,36 +171,55 @@ function ParticipantsRow({ me, displayParticipants, hasVoted, revealedVotes, rev
 }
 
 /* ── Story sidebar row ── */
-function StoryRow({ story, active, onClick, draggable, onDragStart, onDragOver, onDragEnd, isDragging, showDropBefore }) {
+function StoryRow({ story, active, onClick, draggable, onDragStart, onDragOver, onDragEnd, isDragging, showDropBefore, onRemove }) {
+  const trailingMark = story.points !== null
+    ? <span className="story-pts">{story.points}</span>
+    : active
+      ? <span className="story-arrow" aria-hidden="true">▶</span>
+      : null
+
+  const hasTail = trailingMark || onRemove
+
   return (
     <>
       {showDropBefore && <div className="story-drop-indicator" />}
-      <button
-        className={`story-row ${active ? 'active' : ''} ${story.points !== null ? 'done' : ''} ${isDragging ? 'dragging' : ''}`}
-        onClick={onClick}
-        aria-current={active ? 'true' : undefined}
+      <div
+        className={`story-row ${active ? 'active' : ''} ${story.points !== null ? 'done' : ''} ${isDragging ? 'dragging' : ''} ${onRemove ? 'can-remove' : ''}`}
         draggable={draggable}
         onDragStart={onDragStart}
         onDragOver={onDragOver}
         onDragEnd={onDragEnd}
       >
-        {draggable && (
-          <span className="story-drag-handle" aria-label="Drag to reorder">
-            <svg width="8" height="12" viewBox="0 0 8 12" fill="currentColor">
-              <circle cx="2" cy="2" r="1.2"/><circle cx="6" cy="2" r="1.2"/>
-              <circle cx="2" cy="6" r="1.2"/><circle cx="6" cy="6" r="1.2"/>
-              <circle cx="2" cy="10" r="1.2"/><circle cx="6" cy="10" r="1.2"/>
-            </svg>
-          </span>
+        <button
+          className="story-row-jump"
+          onClick={onClick}
+          aria-current={active ? 'true' : undefined}
+        >
+          {draggable && (
+            <span className="story-drag-handle" aria-label="Drag to reorder">
+              <svg width="8" height="12" viewBox="0 0 8 12" fill="currentColor">
+                <circle cx="2" cy="2" r="1.2"/><circle cx="6" cy="2" r="1.2"/>
+                <circle cx="2" cy="6" r="1.2"/><circle cx="6" cy="6" r="1.2"/>
+                <circle cx="2" cy="10" r="1.2"/><circle cx="6" cy="10" r="1.2"/>
+              </svg>
+            </span>
+          )}
+          <span className="story-row-num">{story.num}</span>
+          <span className="story-title">{story.title}</span>
+        </button>
+        {hasTail && (
+          <div className="story-row-tail">
+            {trailingMark}
+            {onRemove && (
+              <button
+                className="story-row-remove"
+                onClick={e => { e.stopPropagation(); onRemove(story.id) }}
+                aria-label={`Remove ${story.title}`}
+              >×</button>
+            )}
+          </div>
         )}
-        <span className="story-row-num">{story.num}</span>
-        <span className="story-title">{story.title}</span>
-        {story.points !== null
-          ? <span className="story-pts">{story.points}</span>
-          : active
-            ? <span className="story-arrow" aria-hidden="true">▶</span>
-            : null}
-      </button>
+      </div>
     </>
   )
 }
@@ -214,7 +233,7 @@ function reorderStories(stories, fromIdx, dropIdx) {
 }
 
 /* ── Story sidebar ── */
-function StorySidebar({ stories, currentIdx, isFacilitator, onAdd, onJump, onReorder, participants, me }) {
+function StorySidebar({ stories, currentIdx, isFacilitator, onAdd, onJump, onReorder, onRemove, participants, me }) {
   const [dragIdx, setDragIdx] = useState(null)
   const [dropIdx, setDropIdx] = useState(null)
 
@@ -267,6 +286,7 @@ function StorySidebar({ stories, currentIdx, isFacilitator, onAdd, onJump, onReo
             onDragEnd={isFacilitator ? handleDragEnd : undefined}
             isDragging={dragIdx === i}
             showDropBefore={dropIdx === i && dragIdx !== i && dragIdx !== i - 1}
+            onRemove={isFacilitator ? onRemove : undefined}
           />
         ))}
         {dropIdx === stories.length && dragIdx !== stories.length - 1 && (
@@ -926,6 +946,39 @@ function RoomView({ roomName, identity, onLeave }) {
           break
         }
 
+        case 'story:removed': {
+          const { storyId } = msg
+          setStories(ss => {
+            const idx = ss.findIndex(s => s.id === storyId)
+            if (idx === -1) return ss
+            const updated = ss.filter(s => s.id !== storyId)
+            const curIdx = currentIdxRef.current
+            if (updated.length === 0) {
+              setCurrentIdx(0)
+              setPhase('voting')
+              setMyVote(null)
+            } else if (idx < curIdx) {
+              setCurrentIdx(curIdx - 1)
+            } else if (idx === curIdx) {
+              const newIdx = Math.min(curIdx, updated.length - 1)
+              setCurrentIdx(newIdx)
+              const next = updated[newIdx]
+              if (next) {
+                const nextPhase = next.phase === 'revealed' ? 'revealed' : 'voting'
+                setPhase(nextPhase)
+                if (nextPhase === 'revealed') {
+                  const myEntry = next.votes?.find(v => v.participantId === me.id && v.value !== undefined)
+                  setMyVote(myEntry ? parseVoteValue(myEntry.value) : null)
+                } else {
+                  setMyVote(myVotesRef.current.get(next.id) ?? null)
+                }
+              }
+            }
+            return updated
+          })
+          break
+        }
+
         case 'participant:joined': {
           setParticipants(pp => pp.find(p => p.id === msg.participant.id) ? pp : [...pp, msg.participant])
           break
@@ -1070,6 +1123,15 @@ function RoomView({ roomName, identity, onLeave }) {
     setShowJira(false)
   }
 
+  const handleRemoveStory = async (storyId) => {
+    if (!me.isFacilitator) return
+    try {
+      await api(`/rooms/${encodeURIComponent(roomName)}/stories/${storyId}`, { method: 'DELETE' })
+    } catch (err) {
+      console.error('Failed to remove story:', err)
+    }
+  }
+
   // displayVoters: voting phase = connected voters, revealed phase = everyone who cast a vote
   const displayParticipants = phase === 'revealed'
     ? (currentStory?.votes ?? []).map(v => ({
@@ -1166,6 +1228,7 @@ function RoomView({ roomName, identity, onLeave }) {
             })
             wsSend({ type: 'story:reorder', storyIds: orderedIds })
           }}
+          onRemove={handleRemoveStory}
           participants={participants}
           me={me} />
         <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
