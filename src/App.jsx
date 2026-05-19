@@ -1346,7 +1346,7 @@ function LandingView({ displayName, onDisplayNameChange, onCreateRoom, onJoined 
         <div className="landing-actions">
           <div>
             <label className="field-label">Your name</label>
-            <input className="input" placeholder="e.g. Alex" value={displayName}
+            <input className="input" placeholder="e.g. George" value={displayName}
               onChange={e => onDisplayNameChange(e.target.value)} autoFocus />
           </div>
           <button className="btn btn-primary btn-lg" style={{ width: '100%' }}
@@ -1401,7 +1401,7 @@ function JoinView({ roomName, displayName, onDisplayNameChange, onJoined, onBack
         <div className="landing-actions">
           <div>
             <label className="field-label">Your name</label>
-            <input className="input" placeholder="e.g. Alex" value={displayName}
+            <input className="input" placeholder="e.g. George" value={displayName}
               onChange={e => onDisplayNameChange(e.target.value)} autoFocus
               onKeyDown={e => e.key === 'Enter' && handleJoin()} />
           </div>
@@ -1454,7 +1454,7 @@ function CreateRoomView({ displayName: initialName, onDisplayNameChange, onCreat
         </div>
         <div>
           <label className="field-label">Your name</label>
-          <input className="input" placeholder="e.g. Alex" value={displayName}
+          <input className="input" placeholder="e.g. George" value={displayName}
             onChange={e => setDisplayName(e.target.value)} />
         </div>
         <div>
