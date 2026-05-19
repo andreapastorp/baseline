@@ -252,8 +252,8 @@ textarea.input { resize: none; line-height: 1.5; }
 /* Trailing slot: shared container for status marks and remove button */
 .story-row-tail {
   flex-shrink: 0;
-  width: 32px;
-  display: flex; align-items: center; justify-content: center;
+  min-width: 28px;
+  display: flex; align-items: center; justify-content: flex-end; gap: 3px;
   position: relative;
   padding-right: var(--space-md);
 }
@@ -264,6 +264,7 @@ textarea.input { resize: none; line-height: 1.5; }
   transition: opacity 0.08s;
 }
 .story-arrow { font-size: 9px; color: var(--accent); transition: opacity 0.08s; }
+.story-fac-mark { font-size: 9px; color: var(--accent); line-height: 1; flex-shrink: 0; }
 .story-row.can-remove:hover .story-pts,
 .story-row.can-remove:hover .story-arrow { opacity: 0; }
 

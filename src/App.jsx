@@ -171,14 +171,18 @@ function ParticipantsRow({ me, displayParticipants, hasVoted, revealedVotes, rev
 }
 
 /* ── Story sidebar row ── */
-function StoryRow({ story, active, onClick, draggable, onDragStart, onDragOver, onDragEnd, isDragging, showDropBefore, onRemove }) {
+function StoryRow({ story, active, isFacilitatorHere, onClick, draggable, onDragStart, onDragOver, onDragEnd, isDragging, showDropBefore, onRemove }) {
+  const facilitatorMark = isFacilitatorHere
+    ? <span className="story-fac-mark" aria-label="Facilitator is here">★</span>
+    : null
+
   const trailingMark = story.points !== null
     ? <span className="story-pts">{story.points}</span>
     : active
       ? <span className="story-arrow" aria-hidden="true">▶</span>
       : null
 
-  const hasTail = trailingMark || onRemove
+  const hasTail = facilitatorMark || trailingMark || onRemove
 
   return (
     <>
@@ -209,6 +213,7 @@ function StoryRow({ story, active, onClick, draggable, onDragStart, onDragOver, 
         </button>
         {hasTail && (
           <div className="story-row-tail">
+            {facilitatorMark}
             {trailingMark}
             {onRemove && (
               <button
@@ -233,7 +238,7 @@ function reorderStories(stories, fromIdx, dropIdx) {
 }
 
 /* ── Story sidebar ── */
-function StorySidebar({ stories, currentIdx, isFacilitator, onAdd, onJump, onReorder, onRemove, participants, me }) {
+function StorySidebar({ stories, currentIdx, isFacilitator, facilitatorStoryId, onAdd, onJump, onReorder, onRemove, participants, me }) {
   const [dragIdx, setDragIdx] = useState(null)
   const [dropIdx, setDropIdx] = useState(null)
 
@@ -279,6 +284,7 @@ function StorySidebar({ stories, currentIdx, isFacilitator, onAdd, onJump, onReo
             key={s.id}
             story={{ ...s, num: i + 1 }}
             active={i === currentIdx}
+            isFacilitatorHere={!isFacilitator && facilitatorStoryId === s.id}
             onClick={() => onJump && onJump(i)}
             draggable={isFacilitator}
             onDragStart={isFacilitator ? e => handleDragStart(e, i) : undefined}
@@ -774,6 +780,7 @@ function RoomView({ roomName, identity, onLeave }) {
   const [stories, setStories] = useState([])
   const [currentIdx, setCurrentIdx] = useState(0)
   const [phase, setPhase] = useState('voting')
+  const [facilitatorStoryId, setFacilitatorStoryId] = useState(null)
   const [myVote, setMyVote] = useState(null)
   const [isVoting, setIsVoting] = useState(me.role === 'voter')
   const [showAddModal, setShowAddModal] = useState(false)
@@ -824,6 +831,7 @@ function RoomView({ roomName, identity, onLeave }) {
       switch (msg.type) {
         case 'room:state': {
           const { room } = msg
+          setFacilitatorStoryId(room.facilitatorStoryId ?? null)
           setParticipants(room.participants)
 
           const sorted = [...room.stories].sort((a, b) => a.position - b.position)
@@ -890,6 +898,7 @@ function RoomView({ roomName, identity, onLeave }) {
 
         case 'story:agreed': {
           const { storyId, score, nextStoryId } = msg
+          if (nextStoryId) setFacilitatorStoryId(nextStoryId)
           setStories(ss => {
             const updated = ss.map(s =>
               // preserve existing votes so jumping back shows correct data
@@ -979,6 +988,11 @@ function RoomView({ roomName, identity, onLeave }) {
           break
         }
 
+        case 'facilitator:focus': {
+          setFacilitatorStoryId(msg.storyId)
+          break
+        }
+
         case 'participant:joined': {
           setParticipants(pp => pp.find(p => p.id === msg.participant.id) ? pp : [...pp, msg.participant])
           break
@@ -1017,6 +1031,16 @@ function RoomView({ roomName, identity, onLeave }) {
 
   // Keep currentIdxRef in sync so WS handlers can read it
   useEffect(() => { currentIdxRef.current = currentIdx }, [currentIdx])
+
+  // Broadcast initial facilitator position once stories are loaded
+  const hasBroadcastInitialFocus = useRef(false)
+  useEffect(() => {
+    if (!me.isFacilitator || hasBroadcastInitialFocus.current || stories.length === 0) return
+    const story = stories[currentIdx]
+    if (!story) return
+    wsSend({ type: 'facilitator:focus', storyId: story.id })
+    hasBroadcastInitialFocus.current = true
+  }, [stories, currentIdx])
 
   // Derive vote state from the current story — this scopes all vote display to the right story
   const currentStory = stories[currentIdx]
@@ -1090,13 +1114,14 @@ function RoomView({ roomName, identity, onLeave }) {
     setCurrentIdx(i)
     if (target.phase !== 'voting') {
       setPhase('revealed')
-      // Restore my vote value from revealed data (if available)
       const myEntry = target.votes.find(v => v.participantId === me.id && v.value !== undefined)
       setMyVote(myEntry ? parseVoteValue(myEntry.value) : null)
     } else {
       setPhase('voting')
-      // Restore whatever this user had previously selected for this story
       setMyVote(myVotesRef.current.get(target.id) ?? null)
+    }
+    if (me.isFacilitator) {
+      wsSend({ type: 'facilitator:focus', storyId: target.id })
     }
   }
 
@@ -1219,6 +1244,7 @@ function RoomView({ roomName, identity, onLeave }) {
       <div style={{ flex: 1, display: 'flex', overflow: 'hidden' }}>
         <StorySidebar stories={stories} currentIdx={currentIdx}
           isFacilitator={me.isFacilitator}
+          facilitatorStoryId={facilitatorStoryId}
           onAdd={() => setShowAddModal(true)}
           onJump={handleJump}
           onReorder={orderedIds => {
@@ -1227,6 +1253,8 @@ function RoomView({ roomName, identity, onLeave }) {
               return orderedIds.map((id, i) => ({ ...map.get(id), position: i }))
             })
             wsSend({ type: 'story:reorder', storyIds: orderedIds })
+            const storyAtCurrentIdx = orderedIds[currentIdx]
+            if (storyAtCurrentIdx) wsSend({ type: 'facilitator:focus', storyId: storyAtCurrentIdx })
           }}
           onRemove={handleRemoveStory}
           participants={participants}

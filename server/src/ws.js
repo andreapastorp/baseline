@@ -5,8 +5,11 @@ const db = require('./db')
 // roomName → Set<WebSocket>
 const rooms = new Map()
 
-// ws → { participantId, roomName }
+// ws → { participantId, roomName, isFacilitator }
 const clients = new Map()
+
+// roomName → storyId (facilitator's current story, ephemeral)
+const facilitatorFocus = new Map()
 
 function broadcastToRoom(roomName, message, exclude = null) {
   const sockets = rooms.get(roomName)
@@ -52,6 +55,7 @@ async function getRoomSnapshot(roomName, connectedParticipantIds) {
   return {
     id: room.id,
     name: room.name,
+    facilitatorStoryId: facilitatorFocus.get(roomName) ?? null,
     stories: room.stories
       .sort((a, b) => a.position - b.position)
       .map(storyShape),
@@ -104,7 +108,7 @@ function setup(server) {
     // Register client
     if (!rooms.has(roomName)) rooms.set(roomName, new Set())
     rooms.get(roomName).add(ws)
-    clients.set(ws, { participantId: participant.id, roomName })
+    clients.set(ws, { participantId: participant.id, roomName, isFacilitator: participant.isFacilitator })
 
     // Build set of currently-connected participant IDs (including the one just added)
     const connectedIds = new Set()
@@ -196,6 +200,8 @@ function setup(server) {
             orderBy: { position: 'asc' },
           })
 
+          if (next) facilitatorFocus.set(roomName, next.id)
+
           broadcastToRoom(roomName, {
             type: 'story:agreed',
             storyId,
@@ -239,18 +245,31 @@ function setup(server) {
           broadcastToRoom(roomName, { type: 'story:reorder', storyIds }, ws)
           break
         }
+
+        case 'facilitator:focus': {
+          if (!p.isFacilitator) return
+          const { storyId } = msg
+          if (!storyId) return
+          facilitatorFocus.set(roomName, storyId)
+          broadcastToRoom(roomName, { type: 'facilitator:focus', storyId }, ws)
+          break
+        }
       }
     })
 
     ws.on('close', () => {
       const info = clients.get(ws)
       if (info) {
-        const { participantId, roomName } = info
+        const { participantId, roomName, isFacilitator } = info
         clients.delete(ws)
         const sockets = rooms.get(roomName)
         if (sockets) {
           sockets.delete(ws)
           if (sockets.size === 0) rooms.delete(roomName)
+        }
+        if (isFacilitator) {
+          facilitatorFocus.delete(roomName)
+          broadcastToRoom(roomName, { type: 'facilitator:focus', storyId: null })
         }
         broadcastToRoom(roomName, { type: 'participant:left', participantId })
       }
