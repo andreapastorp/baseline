@@ -1,7 +1,6 @@
 const { Router } = require('express')
 const { randomUUID } = require('crypto')
 const db = require('../db')
-const { broadcastToRoom } = require('../ws')
 const storiesRouter = require('./stories')
 
 const router = Router()
@@ -84,14 +83,23 @@ router.post('/:name/join', async (req, res) => {
   })
   if (!room) return res.status(404).json({ error: 'Room not found' })
 
+  // Reuse existing participant if the name is already taken in this room (case-insensitive).
+  // This lets someone rejoin after losing their localStorage identity without creating a duplicate.
+  const existing = room.participants.find(
+    p => p.name.toLowerCase() === displayName.toLowerCase()
+  )
+
+  if (existing) {
+    return res.json({
+      room: roomSnapshot(room),
+      participant: { id: existing.id, name: existing.name, role: existing.role, isFacilitator: existing.isFacilitator },
+      token: existing.token,
+    })
+  }
+
   const token = randomUUID()
   const participant = await db.participant.create({
     data: { roomId: room.id, name: displayName, token },
-  })
-
-  broadcastToRoom(room.name, {
-    type: 'participant:joined',
-    participant: { id: participant.id, name: participant.name, role: participant.role, isFacilitator: participant.isFacilitator },
   })
 
   res.json({

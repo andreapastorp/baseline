@@ -8,6 +8,9 @@ const rooms = new Map()
 // ws → { participantId, roomName, isFacilitator }
 const clients = new Map()
 
+// participantId → Set<WebSocket> (all active connections for this participant)
+const participantConnections = new Map()
+
 // roomName → storyId (facilitator's current story, ephemeral)
 const facilitatorFocus = new Map()
 
@@ -110,6 +113,12 @@ function setup(server) {
     rooms.get(roomName).add(ws)
     clients.set(ws, { participantId: participant.id, roomName, isFacilitator: participant.isFacilitator })
 
+    // Track per-participant connections to distinguish "first connection" from "additional tab"
+    if (!participantConnections.has(participant.id)) participantConnections.set(participant.id, new Set())
+    const pConns = participantConnections.get(participant.id)
+    const wasOffline = pConns.size === 0
+    pConns.add(ws)
+
     // Build set of currently-connected participant IDs (including the one just added)
     const connectedIds = new Set()
     for (const sock of rooms.get(roomName)) {
@@ -121,11 +130,14 @@ function setup(server) {
     const snapshot = await getRoomSnapshot(roomName, connectedIds)
     send(ws, { type: 'room:state', room: snapshot })
 
-    // Notify others
-    broadcastToRoom(roomName, {
-      type: 'participant:joined',
-      participant: { id: participant.id, name: participant.name, role: participant.role, isFacilitator: participant.isFacilitator },
-    }, ws)
+    // Only announce join when transitioning from offline → online (not for extra tabs or reconnects
+    // where the old socket hasn't closed yet)
+    if (wasOffline) {
+      broadcastToRoom(roomName, {
+        type: 'participant:joined',
+        participant: { id: participant.id, name: participant.name, role: participant.role, isFacilitator: participant.isFacilitator },
+      }, ws)
+    }
 
     ws.on('message', async (raw) => {
       let msg
@@ -262,16 +274,26 @@ function setup(server) {
       if (info) {
         const { participantId, roomName, isFacilitator } = info
         clients.delete(ws)
+
         const sockets = rooms.get(roomName)
         if (sockets) {
           sockets.delete(ws)
           if (sockets.size === 0) rooms.delete(roomName)
         }
-        if (isFacilitator) {
-          facilitatorFocus.delete(roomName)
-          broadcastToRoom(roomName, { type: 'facilitator:focus', storyId: null })
+
+        // Only announce departure when this was the participant's last connection
+        const pConns = participantConnections.get(participantId)
+        if (pConns) {
+          pConns.delete(ws)
+          if (pConns.size === 0) {
+            participantConnections.delete(participantId)
+            if (isFacilitator) {
+              facilitatorFocus.delete(roomName)
+              broadcastToRoom(roomName, { type: 'facilitator:focus', storyId: null })
+            }
+            broadcastToRoom(roomName, { type: 'participant:left', participantId })
+          }
         }
-        broadcastToRoom(roomName, { type: 'participant:left', participantId })
       }
     })
   })
