@@ -37,6 +37,7 @@ function storyShape(s) {
     points: s.points,
     position: s.position,
     phase: s.phase,
+    jiraKey: s.jiraKey ?? null,
     // Only expose vote values once the story is revealed/agreed — preserve ballot secrecy
     votes: (s.votes || []).map(v => ({
       participantId: v.participantId,

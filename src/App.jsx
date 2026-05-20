@@ -171,7 +171,7 @@ function ParticipantsRow({ me, displayParticipants, hasVoted, revealedVotes, rev
 }
 
 /* ── Story sidebar row ── */
-function StoryRow({ story, active, isFacilitatorHere, onClick, draggable, onDragStart, onDragOver, onDragEnd, isDragging, showDropBefore, onRemove }) {
+function StoryRow({ story, active, isFacilitatorHere, onClick, draggable, onDragStart, onDragOver, onDragEnd, isDragging, showDropBefore, onRemove, syncFailed, onRetrySync }) {
   const facilitatorMark = isFacilitatorHere
     ? <span className="story-fac-mark" aria-label="Facilitator is here">★</span>
     : null
@@ -182,7 +182,11 @@ function StoryRow({ story, active, isFacilitatorHere, onClick, draggable, onDrag
       ? <span className="story-arrow" aria-hidden="true">▶</span>
       : null
 
-  const hasTail = facilitatorMark || trailingMark || onRemove
+  const syncErrMark = syncFailed
+    ? <button className="story-sync-err" onClick={e => { e.stopPropagation(); onRetrySync?.() }} title="Jira sync failed — click to retry" aria-label="Jira sync failed, click to retry">!</button>
+    : null
+
+  const hasTail = facilitatorMark || trailingMark || onRemove || syncErrMark
 
   return (
     <>
@@ -213,6 +217,7 @@ function StoryRow({ story, active, isFacilitatorHere, onClick, draggable, onDrag
         </button>
         {hasTail && (
           <div className="story-row-tail">
+            {syncErrMark}
             {facilitatorMark}
             {trailingMark}
             {onRemove && (
@@ -238,7 +243,7 @@ function reorderStories(stories, fromIdx, dropIdx) {
 }
 
 /* ── Story sidebar ── */
-function StorySidebar({ stories, currentIdx, isFacilitator, facilitatorStoryId, onAdd, onJump, onReorder, onRemove, participants, me }) {
+function StorySidebar({ stories, currentIdx, isFacilitator, facilitatorStoryId, onAdd, onJump, onReorder, onRemove, participants, me, syncStatus, onRetrySync }) {
   const [dragIdx, setDragIdx] = useState(null)
   const [dropIdx, setDropIdx] = useState(null)
 
@@ -293,6 +298,8 @@ function StorySidebar({ stories, currentIdx, isFacilitator, facilitatorStoryId, 
             isDragging={dragIdx === i}
             showDropBefore={dropIdx === i && dragIdx !== i && dragIdx !== i - 1}
             onRemove={isFacilitator ? onRemove : undefined}
+            syncFailed={isFacilitator && syncStatus?.[s.id] === 'failed'}
+            onRetrySync={isFacilitator ? () => onRetrySync?.(s.id, s.jiraKey, s.points) : undefined}
           />
         ))}
         {dropIdx === stories.length && dragIdx !== stories.length - 1 && (
@@ -327,12 +334,25 @@ function StorySidebar({ stories, currentIdx, isFacilitator, facilitatorStoryId, 
 /* ── Active story card ── */
 function ActiveStoryCard({ story, num, total }) {
   const ghost = num < 10 ? `0${num}` : `${num}`
+  const cloudUrl = getJiraAuth()?.cloudUrl
+  const jiraUrl = story?.jiraKey && cloudUrl ? `${cloudUrl}/browse/${story.jiraKey}` : null
   return (
     <div className="active-story">
       <div className="active-story-ghost" aria-hidden="true">{ghost}</div>
-      <div className="active-story-meta">Story {num} of {total}</div>
-      <div className="active-story-title">{story.title}</div>
-      {story.desc && <div className="active-story-desc">{story.desc}</div>}
+      <div className="active-story-meta">
+        Story {num} of {total}
+        {story?.jiraKey && (
+          <span className="active-story-jira">
+            <span className="active-story-jira-sep">·</span>
+            {jiraUrl
+              ? <a href={jiraUrl} target="_blank" rel="noopener noreferrer" className="active-story-jira-key">{story.jiraKey}</a>
+              : <span className="active-story-jira-key">{story.jiraKey}</span>
+            }
+          </span>
+        )}
+      </div>
+      <div className="active-story-title">{story?.title}</div>
+      {story?.desc && <div className="active-story-desc">{story.desc}</div>}
     </div>
   )
 }
@@ -490,11 +510,51 @@ function JiraModal({ onImport, onClose, existingJiraKeys = new Set() }) {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(null)
   const [selected, setSelected] = useState(new Set())
+  const [spField, setSpField] = useState(() => getJiraAuth()?.spField ?? null)
+  const [showPicker, setShowPicker] = useState(false)
+  const [pickerQuery, setPickerQuery] = useState('')
+  const [pickerFields, setPickerFields] = useState([])
+  const [pickerLoading, setPickerLoading] = useState(false)
   const modalRef = useModalA11y(onClose)
   const debounceRef = useRef(null)
   const mode = isJql(query) ? 'JQL' : 'Text'
 
-  const disconnect = () => { saveJiraAuth(null); setAuth(null); setIssues([]); setSelected(new Set()) }
+  const disconnect = () => { saveJiraAuth(null); setAuth(null); setSpField(null); setIssues([]); setSelected(new Set()) }
+
+  const openPicker = async () => {
+    setShowPicker(true)
+    setPickerQuery('')
+    if (pickerFields.length > 0) return
+    setPickerLoading(true)
+    try {
+      const fresh = await ensureFreshToken(auth)
+      if (!fresh) { setAuth(null); saveJiraAuth(null); return }
+      setAuth(fresh)
+      const res = await fetch(`/api/jira/fields?cloudId=${encodeURIComponent(fresh.cloudId)}`, {
+        headers: { Authorization: `Bearer ${fresh.accessToken}` },
+      })
+      if (res.ok) {
+        const data = await res.json()
+        setPickerFields(data.fields || [])
+      }
+    } catch {}
+    finally { setPickerLoading(false) }
+  }
+
+  const selectField = (field) => {
+    setSpField(field)
+    const current = getJiraAuth()
+    if (current) saveJiraAuth({ ...current, spField: field })
+    setShowPicker(false)
+    setPickerQuery('')
+  }
+
+  const clearField = (e) => {
+    e.stopPropagation()
+    setSpField(null)
+    const current = getJiraAuth()
+    if (current) saveJiraAuth({ ...current, spField: null })
+  }
 
   const fetchIssues = async (q, currentAuth) => {
     setLoading(true)
@@ -570,6 +630,46 @@ function JiraModal({ onImport, onClose, existingJiraKeys = new Set() }) {
           </div>
         ) : (
           <>
+            <div className="jira-sp-row">
+              <span className="jira-sp-label">Story points</span>
+              <div style={{ position: 'relative', flex: 1 }}>
+                {showPicker ? (
+                  <div>
+                    <input
+                      className="input jira-sp-input"
+                      placeholder="Search fields…"
+                      value={pickerQuery}
+                      onChange={e => setPickerQuery(e.target.value)}
+                      onKeyDown={e => e.key === 'Escape' && setShowPicker(false)}
+                      autoFocus
+                    />
+                    <div className="jira-sp-list">
+                      {pickerLoading && <div className="jira-sp-empty">Loading…</div>}
+                      {!pickerLoading && pickerFields.length === 0 && (
+                        <div className="jira-sp-empty">No numeric fields found — check Jira permissions.</div>
+                      )}
+                      {pickerFields
+                        .filter(f => !pickerQuery || f.name.toLowerCase().includes(pickerQuery.toLowerCase()))
+                        .map(f => (
+                          <button key={f.id} className="jira-sp-option" onClick={() => selectField(f)}>
+                            {f.name}
+                          </button>
+                        ))
+                      }
+                    </div>
+                  </div>
+                ) : (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                    <button className="jira-sp-value" onClick={openPicker}>
+                      {spField ? spField.name : 'not set'}
+                    </button>
+                    {spField && (
+                      <button className="jira-sp-clear" onClick={clearField}>· clear</button>
+                    )}
+                  </div>
+                )}
+              </div>
+            </div>
             <div className="jira-search-wrap">
               <input
                 className="input"
@@ -785,6 +885,7 @@ function RoomView({ roomName, identity, onLeave }) {
   const [isVoting, setIsVoting] = useState(me.role === 'voter')
   const [showAddModal, setShowAddModal] = useState(false)
   const [showJira, setShowJira] = useState(false)
+  const [jiraSyncStatus, setJiraSyncStatus] = useState({})
   const wsRef = useRef(null)
   // Remembers each story's vote value so it can be restored when jumping back
   const myVotesRef = useRef(new Map())
@@ -1092,9 +1193,44 @@ function RoomView({ roomName, identity, onLeave }) {
     wsSend({ type: 'reveal', storyId: currentStory.id })
   }
 
+  const syncToJira = async (storyId, jiraKey, points, openModalOnAuthError = false) => {
+    const auth = getJiraAuth()
+    const numericPoints = Number(points)
+    if (!auth?.spField || !jiraKey || isNaN(numericPoints)) return
+    setJiraSyncStatus(m => ({ ...m, [storyId]: 'syncing' }))
+    try {
+      const fresh = await ensureFreshToken(auth)
+      if (!fresh) {
+        setJiraSyncStatus(m => ({ ...m, [storyId]: 'failed' }))
+        if (openModalOnAuthError) setShowJira(true)
+        return
+      }
+      saveJiraAuth(fresh)
+      const res = await fetch('/api/jira/sync-points', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${fresh.accessToken}` },
+        body: JSON.stringify({ cloudId: fresh.cloudId, issueKey: jiraKey, fieldId: auth.spField.id, points: numericPoints }),
+      })
+      if (res.ok) {
+        setJiraSyncStatus(m => ({ ...m, [storyId]: 'synced' }))
+        setTimeout(() => setJiraSyncStatus(m => {
+          const n = { ...m }
+          if (n[storyId] === 'synced') delete n[storyId]
+          return n
+        }), 3000)
+      } else {
+        setJiraSyncStatus(m => ({ ...m, [storyId]: 'failed' }))
+        if (openModalOnAuthError && (res.status === 401 || res.status === 403)) setShowJira(true)
+      }
+    } catch {
+      setJiraSyncStatus(m => ({ ...m, [storyId]: 'failed' }))
+    }
+  }
+
   const handleAgree = (score) => {
     if (!currentStory || !me.isFacilitator) return
     wsSend({ type: 'agree', storyId: currentStory.id, score })
+    if (currentStory.jiraKey) syncToJira(currentStory.id, currentStory.jiraKey, score)
   }
 
   const handleRevote = () => {
@@ -1258,7 +1394,9 @@ function RoomView({ roomName, identity, onLeave }) {
           }}
           onRemove={handleRemoveStory}
           participants={participants}
-          me={me} />
+          me={me}
+          syncStatus={jiraSyncStatus}
+          onRetrySync={(storyId, jiraKey, points) => syncToJira(storyId, jiraKey, points, true)} />
         <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
           <ActiveStoryCard story={currentStory} num={currentIdx + 1} total={stories.length} />
           <ParticipantsRow
@@ -1508,7 +1646,7 @@ function AddStoriesView({ roomName, onStart }) {
       if (stories.length > 0) {
         await api(`/rooms/${encodeURIComponent(roomName)}/stories/batch`, {
           method: 'POST',
-          body: stories.map(s => ({ title: s.title, desc: s.desc })),
+          body: stories.map(s => ({ title: s.title, desc: s.desc, jiraKey: s.jiraKey })),
         })
       }
       onStart()
@@ -1563,6 +1701,7 @@ function AddStoriesView({ roomName, onStart }) {
                 <span className="story-list-num">{i + 1}</span>
                 <div style={{ flex: 1 }}>
                   <div className="story-list-title">{s.title}</div>
+                  {s.jiraKey && <div className="story-list-jira-key">{s.jiraKey}</div>}
                   {s.desc && <div className="story-list-desc">{s.desc}</div>}
                 </div>
                 <button className="story-list-remove"
@@ -1601,11 +1740,12 @@ export default function App() {
       accessToken,
       refreshToken: params.get('jira_refresh_token'),
       cloudId: params.get('jira_cloud_id'),
+      cloudUrl: params.get('jira_cloud_url') || null,
       email: params.get('jira_email'),
       expiresAt: Number(params.get('jira_expires_at')),
     })
     const clean = new URLSearchParams(window.location.search)
-    ;['jira_access_token', 'jira_refresh_token', 'jira_cloud_id', 'jira_email', 'jira_expires_at'].forEach(k => clean.delete(k))
+    ;['jira_access_token', 'jira_refresh_token', 'jira_cloud_id', 'jira_cloud_url', 'jira_email', 'jira_expires_at'].forEach(k => clean.delete(k))
     const qs = clean.toString()
     window.history.replaceState({}, '', qs ? `?${qs}` : window.location.pathname)
   }, [])

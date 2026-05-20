@@ -34,7 +34,7 @@ router.get('/auth', (req, res) => {
   const params = new URLSearchParams({
     audience: 'api.atlassian.com',
     client_id: clientId,
-    scope: 'read:jira-work read:jira-user offline_access',
+    scope: 'read:jira-work read:jira-user offline_access write:jira-work',
     redirect_uri: redirectUri,
     response_type: 'code',
     prompt: 'consent',
@@ -92,7 +92,7 @@ router.get('/callback', async (req, res) => {
     if (!resources.length) {
       return res.redirect(`${frontendUrl}/?jira_error=no_resources`)
     }
-    const { id: cloudId, name: siteName } = resources[0]
+    const { id: cloudId, name: siteName, url: cloudUrl } = resources[0]
 
     // Get user email
     const meRes = await fetch(`https://api.atlassian.com/ex/jira/${cloudId}/rest/api/3/myself`, {
@@ -107,6 +107,7 @@ router.get('/callback', async (req, res) => {
       jira_access_token: access_token,
       jira_refresh_token: refresh_token,
       jira_cloud_id: cloudId,
+      jira_cloud_url: cloudUrl || '',
       jira_email: email,
       jira_expires_at: String(expiresAt),
     })
@@ -195,6 +196,68 @@ router.get('/issues', async (req, res) => {
     res.json({ issues })
   } catch (err) {
     console.error('Jira issues error:', err)
+    res.status(500).json({ error: 'server_error' })
+  }
+})
+
+// GET /api/jira/fields — fetch custom numeric fields (for story points mapping)
+router.get('/fields', async (req, res) => {
+  const { cloudId } = req.query
+  const authHeader = req.headers.authorization
+  if (!authHeader || !cloudId) {
+    return res.status(400).json({ error: 'authorization header and cloudId required' })
+  }
+  const accessToken = authHeader.replace('Bearer ', '')
+
+  try {
+    const r = await fetch(`https://api.atlassian.com/ex/jira/${cloudId}/rest/api/3/field`, {
+      headers: { Authorization: `Bearer ${accessToken}`, Accept: 'application/json' },
+    })
+    if (r.status === 401) return res.status(401).json({ error: 'unauthorized' })
+    if (!r.ok) return res.status(r.status).json({ error: 'jira_error' })
+    const data = await r.json()
+    const fields = data
+      .filter(f => f.custom && f.schema?.type === 'number')
+      .map(f => ({ id: f.id, name: f.name }))
+      .sort((a, b) => a.name.localeCompare(b.name))
+    res.json({ fields })
+  } catch (err) {
+    console.error('Jira fields error:', err)
+    res.status(500).json({ error: 'server_error' })
+  }
+})
+
+// POST /api/jira/sync-points — write story points to a Jira issue field
+router.post('/sync-points', async (req, res) => {
+  const { cloudId, issueKey, fieldId, points } = req.body
+  const authHeader = req.headers.authorization
+  if (!authHeader || !cloudId || !issueKey || !fieldId || points === undefined) {
+    return res.status(400).json({ error: 'authorization header, cloudId, issueKey, fieldId, and points required' })
+  }
+  const accessToken = authHeader.replace('Bearer ', '')
+  const numericPoints = Number(points)
+  if (isNaN(numericPoints)) return res.status(400).json({ error: 'points must be numeric' })
+
+  try {
+    const r = await fetch(`https://api.atlassian.com/ex/jira/${cloudId}/rest/api/3/issue/${issueKey}`, {
+      method: 'PUT',
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        Accept: 'application/json',
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ fields: { [fieldId]: numericPoints } }),
+    })
+    if (r.status === 401) return res.status(401).json({ error: 'unauthorized' })
+    if (r.status === 403) return res.status(403).json({ error: 'forbidden' })
+    if (!r.ok) {
+      const errData = await r.json().catch(() => ({}))
+      console.error('Jira sync-points error:', errData)
+      return res.status(r.status).json({ error: 'jira_error' })
+    }
+    res.json({ ok: true })
+  } catch (err) {
+    console.error('Jira sync-points error:', err)
     res.status(500).json({ error: 'server_error' })
   }
 })
