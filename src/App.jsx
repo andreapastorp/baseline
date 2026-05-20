@@ -883,6 +883,7 @@ function RoomView({ roomName, identity, onLeave }) {
   const [facilitatorStoryId, setFacilitatorStoryId] = useState(null)
   const [myVote, setMyVote] = useState(null)
   const [isVoting, setIsVoting] = useState(me.role === 'voter')
+  const [connected, setConnected] = useState(false)
   const [showAddModal, setShowAddModal] = useState(false)
   const [showJira, setShowJira] = useState(false)
   const [jiraSyncStatus, setJiraSyncStatus] = useState({})
@@ -932,6 +933,7 @@ function RoomView({ roomName, identity, onLeave }) {
       switch (msg.type) {
         case 'room:state': {
           const { room } = msg
+          setConnected(true)
           setFacilitatorStoryId(room.facilitatorStoryId ?? null)
           setParticipants(room.participants)
 
@@ -1365,11 +1367,41 @@ function RoomView({ roomName, identity, onLeave }) {
     )
   }
 
-  if (!currentStory) {
+  if (!connected) {
     return (
       <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--muted)', fontSize: 13 }}>
         Connecting…
       </div>
+    )
+  }
+
+  if (!currentStory) {
+    return (
+      <>
+        <TopBar roomName={roomName} me={me}
+          isVoting={isVoting} onToggleVoting={handleToggleObserver} onLeave={onLeave} />
+        <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column', gap: 12 }}>
+          <div style={{ color: 'var(--muted)', fontSize: 13 }}>No stories yet.</div>
+          {me.isFacilitator && (
+            <div style={{ display: 'flex', gap: 8 }}>
+              <button className="btn btn-primary btn-sm" onClick={() => setShowAddModal(true)}>Add</button>
+              <button className="btn btn-ghost btn-sm" onClick={() => setShowJira(true)}>Import from Jira</button>
+            </div>
+          )}
+        </div>
+        {showAddModal && (
+          <AddStoryModal
+            onAdd={handleAddStory}
+            onClose={() => setShowAddModal(false)}
+            onSwitchToJira={() => { setShowAddModal(false); setShowJira(true) }} />
+        )}
+        {showJira && (
+          <JiraModal
+            existingJiraKeys={new Set()}
+            onImport={handleImportJira}
+            onClose={() => setShowJira(false)} />
+        )}
+      </>
     )
   }
 
