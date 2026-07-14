@@ -68,6 +68,30 @@ router.post('/batch', async (req, res) => {
   res.json({ stories })
 })
 
+// PATCH /api/rooms/:name/stories/:id — refresh title/desc (e.g. when Jira drifts from the stored copy)
+router.patch('/:id', async (req, res) => {
+  const { id } = req.params
+  const { title, desc } = req.body
+
+  const room = await db.room.findUnique({ where: { name: req.params.name } })
+  if (!room) return res.status(404).json({ error: 'Room not found' })
+
+  const story = await db.story.findFirst({ where: { id, roomId: room.id } })
+  if (!story) return res.status(404).json({ error: 'Story not found' })
+
+  const updated = await db.story.update({
+    where: { id },
+    data: {
+      ...(title !== undefined ? { title } : {}),
+      ...(desc !== undefined ? { desc } : {}),
+    },
+    include: { votes: true },
+  })
+
+  broadcastToRoom(room.name, { type: 'story:updated', storyId: id, title: updated.title, desc: updated.desc })
+  res.json({ story: storyShape(updated) })
+})
+
 // DELETE /api/rooms/:name/stories/:id
 router.delete('/:id', async (req, res) => {
   const { id } = req.params

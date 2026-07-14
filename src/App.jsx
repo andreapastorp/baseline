@@ -503,7 +503,7 @@ async function ensureFreshToken(auth) {
 }
 
 /* ── Jira Import Modal ── */
-function JiraModal({ onImport, onClose, existingJiraKeys = new Set() }) {
+function JiraModal({ onImport, onClose, existingStories = new Map(), onSyncExisting }) {
   const [auth, setAuth] = useState(() => getJiraAuth())
   const [query, setQuery] = useState('')
   const [issues, setIssues] = useState([])
@@ -547,7 +547,9 @@ function JiraModal({ onImport, onClose, existingJiraKeys = new Set() }) {
       const fresh = await ensureFreshToken(auth)
       if (!fresh) { setAuth(null); saveJiraAuth(null); return }
       setAuth(fresh)
-      const res = await fetch(`/api/jira/fields?cloudId=${encodeURIComponent(fresh.cloudId)}`, {
+      const params = new URLSearchParams({ cloudId: fresh.cloudId })
+      if (fresh.cloudUrl) params.set('cloudUrl', fresh.cloudUrl)
+      const res = await fetch(`/api/jira/fields?${params}`, {
         headers: { Authorization: `Bearer ${fresh.accessToken}` },
       })
       if (res.ok) setPickerFields((await res.json()).fields || [])
@@ -579,7 +581,9 @@ function JiraModal({ onImport, onClose, existingJiraKeys = new Set() }) {
       const fresh = await ensureFreshToken(auth)
       if (!fresh) { setAuth(null); saveJiraAuth(null); return }
       setAuth(fresh)
-      const res = await fetch(`/api/jira/projects?cloudId=${encodeURIComponent(fresh.cloudId)}`, {
+      const projectParams = new URLSearchParams({ cloudId: fresh.cloudId })
+      if (fresh.cloudUrl) projectParams.set('cloudUrl', fresh.cloudUrl)
+      const res = await fetch(`/api/jira/projects?${projectParams}`, {
         headers: { Authorization: `Bearer ${fresh.accessToken}` },
       })
       if (res.ok) setPickerProjects((await res.json()).projects || [])
@@ -615,7 +619,9 @@ function JiraModal({ onImport, onClose, existingJiraKeys = new Set() }) {
       const fresh = await ensureFreshToken(auth)
       if (!fresh) { setAuth(null); saveJiraAuth(null); return }
       setAuth(fresh)
-      const res = await fetch(`/api/jira/sprints?cloudId=${encodeURIComponent(fresh.cloudId)}&projectKey=${encodeURIComponent(project.key)}`, {
+      const sprintParams = new URLSearchParams({ cloudId: fresh.cloudId, projectKey: project.key })
+      if (fresh.cloudUrl) sprintParams.set('cloudUrl', fresh.cloudUrl)
+      const res = await fetch(`/api/jira/sprints?${sprintParams}`, {
         headers: { Authorization: `Bearer ${fresh.accessToken}` },
       })
       if (res.ok) setPickerSprints((await res.json()).sprints || [])
@@ -646,6 +652,7 @@ function JiraModal({ onImport, onClose, existingJiraKeys = new Set() }) {
       if (!fresh) { setAuth(null); saveJiraAuth(null); return }
       setAuth(fresh)
       const params = new URLSearchParams({ q, cloudId: fresh.cloudId })
+      if (fresh.cloudUrl) params.set('cloudUrl', fresh.cloudUrl)
       if (currentProject?.key) params.set('projectKey', currentProject.key)
       const res = await fetch(`/api/jira/issues?${params}`, {
         headers: { Authorization: `Bearer ${fresh.accessToken}` },
@@ -654,6 +661,14 @@ function JiraModal({ onImport, onClose, existingJiraKeys = new Set() }) {
       if (!res.ok) { setError('Failed to load issues.'); return }
       const data = await res.json()
       setIssues(data.issues || [])
+      if (onSyncExisting) {
+        for (const issue of data.issues || []) {
+          const existing = existingStories.get(issue.key)
+          if (existing && (existing.title !== issue.title || existing.desc !== issue.desc)) {
+            onSyncExisting(existing.id, issue.title, issue.desc)
+          }
+        }
+      }
     } catch { setError('Failed to load issues.') }
     finally { setLoading(false) }
   }
@@ -672,7 +687,7 @@ function JiraModal({ onImport, onClose, existingJiraKeys = new Set() }) {
   }
 
   const toggle = key => {
-    if (existingJiraKeys.has(key)) return
+    if (existingStories.has(key)) return
     setSelected(s => { const n = new Set(s); n.has(key) ? n.delete(key) : n.add(key); return n })
   }
 
@@ -818,7 +833,7 @@ function JiraModal({ onImport, onClose, existingJiraKeys = new Set() }) {
                         <div className="jira-sp-list">
                           {pickerLoading && <div className="jira-sp-empty">Loading…</div>}
                           {!pickerLoading && pickerSprints.length === 0 && (
-                            <div className="jira-sp-empty">No active sprints found for this project.</div>
+                            <div className="jira-sp-empty">No sprints found — reconnect if this looks wrong.</div>
                           )}
                           {pickerSprints
                             .filter(s => !pickerQuery || s.name.toLowerCase().includes(pickerQuery.toLowerCase()))
@@ -869,7 +884,7 @@ function JiraModal({ onImport, onClose, existingJiraKeys = new Set() }) {
                     <div style={{ color: 'var(--muted)', fontSize: 13, padding: '20px 0' }}>No issues found.</div>
                   )}
                   {!loading && issues.map(issue => {
-                    const alreadyAdded = existingJiraKeys.has(issue.key)
+                    const alreadyAdded = existingStories.has(issue.key)
                     const isSelected = selected.has(issue.key)
                     return (
                       <div
@@ -1214,6 +1229,12 @@ function RoomView({ roomName, identity, onLeave }) {
           break
         }
 
+        case 'story:updated': {
+          const { storyId, title, desc } = msg
+          setStories(ss => ss.map(s => s.id === storyId ? { ...s, title, desc } : s))
+          break
+        }
+
         case 'story:reorder': {
           const { storyIds } = msg
           setStories(ss => {
@@ -1382,14 +1403,14 @@ function RoomView({ roomName, identity, onLeave }) {
         fetch('/api/jira/sync-points', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${fresh.accessToken}` },
-          body: JSON.stringify({ cloudId: fresh.cloudId, issueKey: jiraKey, fieldId: auth.spField.id, points: numericPoints }),
+          body: JSON.stringify({ cloudId: fresh.cloudId, cloudUrl: fresh.cloudUrl, issueKey: jiraKey, fieldId: auth.spField.id, points: numericPoints }),
         }),
       ]
       if (auth.sprint?.id) {
         ops.push(fetch('/api/jira/move-to-sprint', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${fresh.accessToken}` },
-          body: JSON.stringify({ cloudId: fresh.cloudId, issueKey: jiraKey, sprintId: auth.sprint.id }),
+          body: JSON.stringify({ cloudId: fresh.cloudId, cloudUrl: fresh.cloudUrl, issueKey: jiraKey, sprintId: auth.sprint.id }),
         }))
       }
       const results = await Promise.all(ops)
@@ -1465,6 +1486,15 @@ function RoomView({ roomName, identity, onLeave }) {
       console.error('Failed to import stories:', err)
     }
     setShowJira(false)
+  }
+
+  const handleSyncJiraStory = async (storyId, title, desc) => {
+    try {
+      await api(`/rooms/${encodeURIComponent(roomName)}/stories/${storyId}`, {
+        method: 'PATCH',
+        body: { title, desc },
+      })
+    } catch (err) { console.error('Failed to sync story from Jira:', err) }
   }
 
   const handleRemoveStory = async (storyId) => {
@@ -1578,7 +1608,7 @@ function RoomView({ roomName, identity, onLeave }) {
         )}
         {showJira && (
           <JiraModal
-            existingJiraKeys={new Set()}
+            existingStories={new Map()}
             onImport={handleImportJira}
             onClose={() => setShowJira(false)} />
         )}
@@ -1656,8 +1686,9 @@ function RoomView({ roomName, identity, onLeave }) {
       )}
       {showJira && (
         <JiraModal
-          existingJiraKeys={new Set(stories.filter(s => s.jiraKey).map(s => s.jiraKey))}
+          existingStories={new Map(stories.filter(s => s.jiraKey).map(s => [s.jiraKey, s]))}
           onImport={handleImportJira}
+          onSyncExisting={handleSyncJiraStory}
           onClose={() => setShowJira(false)} />
       )}
     </>
@@ -1926,7 +1957,7 @@ function AddStoriesView({ roomName, onStart }) {
       </div>
       {showJira && (
         <JiraModal
-          existingJiraKeys={new Set(stories.filter(s => s.jiraKey).map(s => s.jiraKey))}
+          existingStories={new Map(stories.filter(s => s.jiraKey).map(s => [s.jiraKey, s]))}
           onImport={issues => {
             setStories(ss => [...ss, ...issues.map(i => ({
               id: Date.now() + Math.random(), title: i.title, desc: i.desc, jiraKey: i.key,
