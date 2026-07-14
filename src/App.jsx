@@ -511,18 +511,35 @@ function JiraModal({ onImport, onClose, existingJiraKeys = new Set() }) {
   const [error, setError] = useState(null)
   const [selected, setSelected] = useState(new Set())
   const [spField, setSpField] = useState(() => getJiraAuth()?.spField ?? null)
-  const [showPicker, setShowPicker] = useState(false)
+  const [project, setProject] = useState(() => getJiraAuth()?.project ?? null)
+  const [sprint, setSprint] = useState(() => getJiraAuth()?.sprint ?? null)
+  const [activePicker, setActivePicker] = useState(null) // 'field' | 'project' | 'sprint'
   const [pickerQuery, setPickerQuery] = useState('')
   const [pickerFields, setPickerFields] = useState([])
+  const [pickerProjects, setPickerProjects] = useState([])
+  const [pickerSprints, setPickerSprints] = useState([])
   const [pickerLoading, setPickerLoading] = useState(false)
   const modalRef = useModalA11y(onClose)
   const debounceRef = useRef(null)
+  const pickerContainerRef = useRef(null)
   const mode = isJql(query) ? 'JQL' : 'Text'
 
-  const disconnect = () => { saveJiraAuth(null); setAuth(null); setSpField(null); setIssues([]); setSelected(new Set()) }
+  useEffect(() => {
+    if (!activePicker) return
+    const handler = (e) => {
+      if (pickerContainerRef.current && !pickerContainerRef.current.contains(e.target)) {
+        setActivePicker(null)
+        setPickerQuery('')
+      }
+    }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [activePicker])
 
-  const openPicker = async () => {
-    setShowPicker(true)
+  const disconnect = () => { saveJiraAuth(null); setAuth(null); setSpField(null); setProject(null); setSprint(null); setIssues([]); setSelected(new Set()); setActivePicker(null) }
+
+  const openFieldPicker = async () => {
+    setActivePicker('field')
     setPickerQuery('')
     if (pickerFields.length > 0) return
     setPickerLoading(true)
@@ -533,10 +550,7 @@ function JiraModal({ onImport, onClose, existingJiraKeys = new Set() }) {
       const res = await fetch(`/api/jira/fields?cloudId=${encodeURIComponent(fresh.cloudId)}`, {
         headers: { Authorization: `Bearer ${fresh.accessToken}` },
       })
-      if (res.ok) {
-        const data = await res.json()
-        setPickerFields(data.fields || [])
-      }
+      if (res.ok) setPickerFields((await res.json()).fields || [])
     } catch {}
     finally { setPickerLoading(false) }
   }
@@ -545,7 +559,7 @@ function JiraModal({ onImport, onClose, existingJiraKeys = new Set() }) {
     setSpField(field)
     const current = getJiraAuth()
     if (current) saveJiraAuth({ ...current, spField: field })
-    setShowPicker(false)
+    setActivePicker(null)
     setPickerQuery('')
   }
 
@@ -556,14 +570,84 @@ function JiraModal({ onImport, onClose, existingJiraKeys = new Set() }) {
     if (current) saveJiraAuth({ ...current, spField: null })
   }
 
-  const fetchIssues = async (q, currentAuth) => {
+  const openProjectPicker = async () => {
+    setActivePicker('project')
+    setPickerQuery('')
+    if (pickerProjects.length > 0) return
+    setPickerLoading(true)
+    try {
+      const fresh = await ensureFreshToken(auth)
+      if (!fresh) { setAuth(null); saveJiraAuth(null); return }
+      setAuth(fresh)
+      const res = await fetch(`/api/jira/projects?cloudId=${encodeURIComponent(fresh.cloudId)}`, {
+        headers: { Authorization: `Bearer ${fresh.accessToken}` },
+      })
+      if (res.ok) setPickerProjects((await res.json()).projects || [])
+    } catch {}
+    finally { setPickerLoading(false) }
+  }
+
+  const selectProject = (proj) => {
+    setProject(proj)
+    setSprint(null)
+    setPickerSprints([])
+    const current = getJiraAuth()
+    if (current) saveJiraAuth({ ...current, project: proj, sprint: null })
+    setActivePicker(null)
+    setPickerQuery('')
+  }
+
+  const clearProject = (e) => {
+    e.stopPropagation()
+    setProject(null)
+    setSprint(null)
+    const current = getJiraAuth()
+    if (current) saveJiraAuth({ ...current, project: null, sprint: null })
+  }
+
+  const openSprintPicker = async () => {
+    if (!project) return
+    setActivePicker('sprint')
+    setPickerQuery('')
+    setPickerSprints([])
+    setPickerLoading(true)
+    try {
+      const fresh = await ensureFreshToken(auth)
+      if (!fresh) { setAuth(null); saveJiraAuth(null); return }
+      setAuth(fresh)
+      const res = await fetch(`/api/jira/sprints?cloudId=${encodeURIComponent(fresh.cloudId)}&projectKey=${encodeURIComponent(project.key)}`, {
+        headers: { Authorization: `Bearer ${fresh.accessToken}` },
+      })
+      if (res.ok) setPickerSprints((await res.json()).sprints || [])
+    } catch {}
+    finally { setPickerLoading(false) }
+  }
+
+  const selectSprint = (sp) => {
+    setSprint(sp)
+    const current = getJiraAuth()
+    if (current) saveJiraAuth({ ...current, sprint: sp })
+    setActivePicker(null)
+    setPickerQuery('')
+  }
+
+  const clearSprint = (e) => {
+    e.stopPropagation()
+    setSprint(null)
+    const current = getJiraAuth()
+    if (current) saveJiraAuth({ ...current, sprint: null })
+  }
+
+  const fetchIssues = async (q, currentAuth, currentProject) => {
     setLoading(true)
     setError(null)
     try {
       const fresh = await ensureFreshToken(currentAuth)
       if (!fresh) { setAuth(null); saveJiraAuth(null); return }
       setAuth(fresh)
-      const res = await fetch(`/api/jira/issues?q=${encodeURIComponent(q)}&cloudId=${encodeURIComponent(fresh.cloudId)}`, {
+      const params = new URLSearchParams({ q, cloudId: fresh.cloudId })
+      if (currentProject?.key) params.set('projectKey', currentProject.key)
+      const res = await fetch(`/api/jira/issues?${params}`, {
         headers: { Authorization: `Bearer ${fresh.accessToken}` },
       })
       if (res.status === 401) { setAuth(null); saveJiraAuth(null); setError('Session expired — reconnect to Jira.'); return }
@@ -576,15 +660,15 @@ function JiraModal({ onImport, onClose, existingJiraKeys = new Set() }) {
 
   useEffect(() => {
     if (!auth) return
-    if (!query.trim()) { setIssues([]); return }
+    if (!query.trim() && !project) { setIssues([]); return }
     if (isJql(query)) return // JQL fires on Enter only
     clearTimeout(debounceRef.current)
-    debounceRef.current = setTimeout(() => fetchIssues(query, auth), 300)
+    debounceRef.current = setTimeout(() => fetchIssues(query, auth, project), 300)
     return () => clearTimeout(debounceRef.current)
-  }, [query, auth])
+  }, [query, auth, project])
 
   const handleKeyDown = (e) => {
-    if (e.key === 'Enter' && isJql(query) && auth) fetchIssues(query, auth)
+    if (e.key === 'Enter' && isJql(query) && auth) fetchIssues(query, auth, project)
   }
 
   const toggle = key => {
@@ -631,28 +715,28 @@ function JiraModal({ onImport, onClose, existingJiraKeys = new Set() }) {
         ) : (
           <>
             <div className="jira-sp-row">
-              <span className="jira-sp-label">Story points</span>
-              <div style={{ position: 'relative', flex: 1 }}>
-                {showPicker ? (
+              <span className="jira-sp-label">Project</span>
+              <div style={{ position: 'relative', flex: 1 }} ref={activePicker === 'project' ? pickerContainerRef : undefined}>
+                {activePicker === 'project' ? (
                   <div>
                     <input
                       className="input jira-sp-input"
-                      placeholder="Search fields…"
+                      placeholder="Search projects…"
                       value={pickerQuery}
                       onChange={e => setPickerQuery(e.target.value)}
-                      onKeyDown={e => e.key === 'Escape' && setShowPicker(false)}
+                      onKeyDown={e => e.key === 'Escape' && setActivePicker(null)}
                       autoFocus
                     />
                     <div className="jira-sp-list">
                       {pickerLoading && <div className="jira-sp-empty">Loading…</div>}
-                      {!pickerLoading && pickerFields.length === 0 && (
-                        <div className="jira-sp-empty">No numeric fields found — check Jira permissions.</div>
+                      {!pickerLoading && pickerProjects.length === 0 && (
+                        <div className="jira-sp-empty">No projects found — check Jira permissions.</div>
                       )}
-                      {pickerFields
-                        .filter(f => !pickerQuery || f.name.toLowerCase().includes(pickerQuery.toLowerCase()))
-                        .map(f => (
-                          <button key={f.id} className="jira-sp-option" onClick={() => selectField(f)}>
-                            {f.name}
+                      {pickerProjects
+                        .filter(p => !pickerQuery || p.name.toLowerCase().includes(pickerQuery.toLowerCase()) || p.key.toLowerCase().includes(pickerQuery.toLowerCase()))
+                        .map(p => (
+                          <button key={p.key} className="jira-sp-option" onClick={() => selectProject(p)}>
+                            {p.key} · {p.name}
                           </button>
                         ))
                       }
@@ -660,83 +744,169 @@ function JiraModal({ onImport, onClose, existingJiraKeys = new Set() }) {
                   </div>
                 ) : (
                   <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                    <button className="jira-sp-value" onClick={openPicker}>
-                      {spField ? spField.name : 'not set'}
+                    <button className="jira-sp-value" onClick={openProjectPicker}>
+                      {project ? `${project.key} · ${project.name}` : 'not set'}
                     </button>
-                    {spField && (
-                      <button className="jira-sp-clear" onClick={clearField}>· clear</button>
+                    {project && (
+                      <button className="jira-sp-clear" onClick={clearProject}>· clear</button>
                     )}
                   </div>
                 )}
               </div>
             </div>
-            <div className="jira-search-wrap">
-              <input
-                className="input"
-                placeholder="Search or enter JQL…"
-                value={query}
-                onChange={e => setQuery(e.target.value)}
-                onKeyDown={handleKeyDown}
-                autoFocus
-              />
-              <span className="jira-mode-label">{mode}</span>
-            </div>
-            {mode === 'JQL' && (
-              <p style={{ fontSize: 11, color: 'var(--muted)', margin: '0 0 4px', opacity: 0.7 }}>
-                Press Enter to run query
-              </p>
-            )}
-            {error && <p style={{ fontSize: 12, color: 'var(--error)', margin: 0 }}>{error}</p>}
 
-            <div className="jira-issues">
-              {loading && [0, 1, 2].map(i => (
-                <div key={i} className="jira-skeleton" style={{ animationDelay: `${i * 80}ms` }} />
-              ))}
-              {!loading && !error && issues.length === 0 && query.trim() && (
-                <div style={{ color: 'var(--muted)', fontSize: 13, padding: '20px 0' }}>No issues found.</div>
-              )}
-              {!loading && !query.trim() && (
-                <div style={{ color: 'var(--muted)', fontSize: 13, padding: '20px 0' }}>
-                  Search for issues or enter a JQL query.
-                </div>
-              )}
-              {!loading && issues.map(issue => {
-                const alreadyAdded = existingJiraKeys.has(issue.key)
-                const isSelected = selected.has(issue.key)
-                return (
-                  <div
-                    key={issue.key}
-                    className={`jira-issue-row ${isSelected ? 'selected' : ''} ${alreadyAdded ? 'already-added' : ''}`}
-                    role={alreadyAdded ? undefined : 'checkbox'}
-                    aria-checked={alreadyAdded ? undefined : isSelected}
-                    tabIndex={alreadyAdded ? -1 : 0}
-                    onClick={() => toggle(issue.key)}
-                    onKeyDown={e => { if (!alreadyAdded && (e.key === ' ' || e.key === 'Enter')) { e.preventDefault(); toggle(issue.key) } }}
-                  >
-                    <div className="jira-checkbox" aria-hidden="true">
-                      {alreadyAdded ? '·' : isSelected ? '✓' : ''}
-                    </div>
-                    <div>
-                      <div className="jira-key">{issue.key}</div>
-                      <div className="jira-issue-title">{issue.title}</div>
-                      {issue.desc && <div className="jira-issue-desc">{issue.desc}</div>}
-                    </div>
-                  </div>
-                )
-              })}
-            </div>
-
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <span style={{ fontSize: 13, color: 'var(--muted2)' }}>
-                {selected.size > 0 ? `${selected.size} selected` : ''}
-              </span>
-              <div style={{ display: 'flex', gap: 8 }}>
-                <button className="btn btn-ghost" onClick={onClose}>Cancel</button>
-                <button className="btn btn-primary" disabled={!selected.size} onClick={handleImport}>
-                  Add to room{selected.size > 0 ? ` (${selected.size})` : ''}
-                </button>
+            {!project ? (
+              <div style={{ padding: '20px 0', color: 'var(--muted)', fontSize: 13 }}>
+                Select a project to search and import issues.
               </div>
-            </div>
+            ) : (
+              <>
+                <div style={{ display: 'flex', flexDirection: 'column' }}>
+                <div className="jira-sp-row">
+                  <span className="jira-sp-label">Story points</span>
+                  <div style={{ position: 'relative', flex: 1 }} ref={activePicker === 'field' ? pickerContainerRef : undefined}>
+                    {activePicker === 'field' ? (
+                      <div>
+                        <input
+                          className="input jira-sp-input"
+                          placeholder="Search fields…"
+                          value={pickerQuery}
+                          onChange={e => setPickerQuery(e.target.value)}
+                          onKeyDown={e => e.key === 'Escape' && setActivePicker(null)}
+                          autoFocus
+                        />
+                        <div className="jira-sp-list">
+                          {pickerLoading && <div className="jira-sp-empty">Loading…</div>}
+                          {!pickerLoading && pickerFields.length === 0 && (
+                            <div className="jira-sp-empty">No numeric fields found — check Jira permissions.</div>
+                          )}
+                          {pickerFields
+                            .filter(f => !pickerQuery || f.name.toLowerCase().includes(pickerQuery.toLowerCase()))
+                            .map(f => (
+                              <button key={f.id} className="jira-sp-option" onClick={() => selectField(f)}>
+                                {f.name}
+                              </button>
+                            ))
+                          }
+                        </div>
+                      </div>
+                    ) : (
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                        <button className="jira-sp-value" onClick={openFieldPicker}>
+                          {spField ? spField.name : 'not set'}
+                        </button>
+                        {spField && (
+                          <button className="jira-sp-clear" onClick={clearField}>· clear</button>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                </div>
+                <div className="jira-sp-row">
+                  <span className="jira-sp-label">Sprint</span>
+                  <div style={{ position: 'relative', flex: 1 }} ref={activePicker === 'sprint' ? pickerContainerRef : undefined}>
+                    {activePicker === 'sprint' ? (
+                      <div>
+                        <input
+                          className="input jira-sp-input"
+                          placeholder="Search sprints…"
+                          value={pickerQuery}
+                          onChange={e => setPickerQuery(e.target.value)}
+                          onKeyDown={e => e.key === 'Escape' && setActivePicker(null)}
+                          autoFocus
+                        />
+                        <div className="jira-sp-list">
+                          {pickerLoading && <div className="jira-sp-empty">Loading…</div>}
+                          {!pickerLoading && pickerSprints.length === 0 && (
+                            <div className="jira-sp-empty">No active sprints found for this project.</div>
+                          )}
+                          {pickerSprints
+                            .filter(s => !pickerQuery || s.name.toLowerCase().includes(pickerQuery.toLowerCase()))
+                            .map(s => (
+                              <button key={s.id} className="jira-sp-option" onClick={() => selectSprint(s)}>
+                                {s.name}
+                              </button>
+                            ))
+                          }
+                        </div>
+                      </div>
+                    ) : (
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                        <button className="jira-sp-value" onClick={openSprintPicker}>
+                          {sprint ? sprint.name : 'not set'}
+                        </button>
+                        {sprint && (
+                          <button className="jira-sp-clear" onClick={clearSprint}>· clear</button>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                </div>
+                </div>
+                <div className="jira-search-wrap">
+                  <input
+                    className="input"
+                    placeholder={`Search in ${project.key}…`}
+                    value={query}
+                    onChange={e => setQuery(e.target.value)}
+                    onKeyDown={handleKeyDown}
+                    autoFocus
+                  />
+                  <span className="jira-mode-label">{mode}</span>
+                </div>
+                {mode === 'JQL' && (
+                  <p style={{ fontSize: 11, color: 'var(--muted)', margin: '0 0 4px', opacity: 0.7 }}>
+                    Press Enter to run query
+                  </p>
+                )}
+                {error && <p style={{ fontSize: 12, color: 'var(--error)', margin: 0 }}>{error}</p>}
+
+                <div className="jira-issues">
+                  {loading && [0, 1, 2].map(i => (
+                    <div key={i} className="jira-skeleton" style={{ animationDelay: `${i * 80}ms` }} />
+                  ))}
+                  {!loading && !error && issues.length === 0 && (
+                    <div style={{ color: 'var(--muted)', fontSize: 13, padding: '20px 0' }}>No issues found.</div>
+                  )}
+                  {!loading && issues.map(issue => {
+                    const alreadyAdded = existingJiraKeys.has(issue.key)
+                    const isSelected = selected.has(issue.key)
+                    return (
+                      <div
+                        key={issue.key}
+                        className={`jira-issue-row ${isSelected ? 'selected' : ''} ${alreadyAdded ? 'already-added' : ''}`}
+                        role={alreadyAdded ? undefined : 'checkbox'}
+                        aria-checked={alreadyAdded ? undefined : isSelected}
+                        tabIndex={alreadyAdded ? -1 : 0}
+                        onClick={() => toggle(issue.key)}
+                        onKeyDown={e => { if (!alreadyAdded && (e.key === ' ' || e.key === 'Enter')) { e.preventDefault(); toggle(issue.key) } }}
+                      >
+                        <div className="jira-checkbox" aria-hidden="true">
+                          {alreadyAdded ? '·' : isSelected ? '✓' : ''}
+                        </div>
+                        <div>
+                          <div className="jira-key">{issue.key}</div>
+                          <div className="jira-issue-title">{issue.title}</div>
+                          {issue.desc && <div className="jira-issue-desc">{issue.desc}</div>}
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <span style={{ fontSize: 13, color: 'var(--muted2)' }}>
+                    {selected.size > 0 ? `${selected.size} selected` : ''}
+                  </span>
+                  <div style={{ display: 'flex', gap: 8 }}>
+                    <button className="btn btn-ghost" onClick={onClose}>Cancel</button>
+                    <button className="btn btn-primary" disabled={!selected.size} onClick={handleImport}>
+                      Add to room{selected.size > 0 ? ` (${selected.size})` : ''}
+                    </button>
+                  </div>
+                </div>
+              </>
+            )}
           </>
         )}
       </div>
@@ -1208,12 +1378,22 @@ function RoomView({ roomName, identity, onLeave }) {
         return
       }
       saveJiraAuth(fresh)
-      const res = await fetch('/api/jira/sync-points', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${fresh.accessToken}` },
-        body: JSON.stringify({ cloudId: fresh.cloudId, issueKey: jiraKey, fieldId: auth.spField.id, points: numericPoints }),
-      })
-      if (res.ok) {
+      const ops = [
+        fetch('/api/jira/sync-points', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${fresh.accessToken}` },
+          body: JSON.stringify({ cloudId: fresh.cloudId, issueKey: jiraKey, fieldId: auth.spField.id, points: numericPoints }),
+        }),
+      ]
+      if (auth.sprint?.id) {
+        ops.push(fetch('/api/jira/move-to-sprint', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${fresh.accessToken}` },
+          body: JSON.stringify({ cloudId: fresh.cloudId, issueKey: jiraKey, sprintId: auth.sprint.id }),
+        }))
+      }
+      const results = await Promise.all(ops)
+      if (results.every(r => r.ok)) {
         setJiraSyncStatus(m => ({ ...m, [storyId]: 'synced' }))
         setTimeout(() => setJiraSyncStatus(m => {
           const n = { ...m }
@@ -1222,7 +1402,8 @@ function RoomView({ roomName, identity, onLeave }) {
         }), 3000)
       } else {
         setJiraSyncStatus(m => ({ ...m, [storyId]: 'failed' }))
-        if (openModalOnAuthError && (res.status === 401 || res.status === 403)) setShowJira(true)
+        const hasAuthError = results.some(r => r.status === 401 || r.status === 403)
+        if (openModalOnAuthError && hasAuthError) setShowJira(true)
       }
     } catch {
       setJiraSyncStatus(m => ({ ...m, [storyId]: 'failed' }))

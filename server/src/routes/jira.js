@@ -8,6 +8,10 @@ function isJql(q) {
   return JQL_RE.test(q.trim())
 }
 
+function jiraBase(cloudId) {
+  return `https://api.atlassian.com/ex/jira/${cloudId}`
+}
+
 function getConfig() {
   const clientId = process.env.JIRA_CLIENT_ID
   const clientSecret = process.env.JIRA_CLIENT_SECRET
@@ -34,7 +38,7 @@ router.get('/auth', (req, res) => {
   const params = new URLSearchParams({
     audience: 'api.atlassian.com',
     client_id: clientId,
-    scope: 'read:jira-work read:jira-user offline_access write:jira-work',
+    scope: 'offline_access read:jira-work write:jira-work read:jira-user read:project:jira read:board-scope:jira-software read:sprint:jira-software write:sprint:jira-software',
     redirect_uri: redirectUri,
     response_type: 'code',
     prompt: 'consent',
@@ -95,7 +99,7 @@ router.get('/callback', async (req, res) => {
     const { id: cloudId, name: siteName, url: cloudUrl } = resources[0]
 
     // Get user email
-    const meRes = await fetch(`https://api.atlassian.com/ex/jira/${cloudId}/rest/api/3/myself`, {
+    const meRes = await fetch(`${cloudUrl}/rest/api/3/myself`, {
       headers: { Authorization: `Bearer ${access_token}`, Accept: 'application/json' },
     })
     const meData = meRes.ok ? await meRes.json() : {}
@@ -150,20 +154,38 @@ router.post('/refresh', async (req, res) => {
   }
 })
 
-// GET /api/jira/issues — search issues (text or JQL)
+// GET /api/jira/issues — search issues (text or JQL, optionally scoped to a project)
 router.get('/issues', async (req, res) => {
-  const { q = '', cloudId } = req.query
+  const { q = '', cloudId, projectKey } = req.query
   const authHeader = req.headers.authorization
   if (!authHeader || !cloudId) {
     return res.status(400).json({ error: 'authorization header and cloudId required' })
   }
   const accessToken = authHeader.replace('Bearer ', '')
+  const base = jiraBase(cloudId)
 
   try {
     let issues
     if (isJql(q)) {
       const jql = q.trim() || 'ORDER BY created DESC'
-      const url = `https://api.atlassian.com/ex/jira/${cloudId}/rest/api/3/search/jql`
+      const url = `${base}/rest/api/3/search/jql`
+      const r = await fetch(url, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${accessToken}`, Accept: 'application/json', 'Content-Type': 'application/json' },
+        body: JSON.stringify({ jql, maxResults: 20, fields: ['summary', 'description'] }),
+      })
+      if (r.status === 401) return res.status(401).json({ error: 'unauthorized' })
+      if (!r.ok) return res.status(r.status).json({ error: 'jira_error' })
+      const data = await r.json()
+      issues = (data.issues || []).map(i => ({
+        key: i.key,
+        title: i.fields.summary,
+        desc: extractDesc(i.fields.description),
+      }))
+    } else if (projectKey) {
+      const textClause = q.trim() ? ` AND text ~ ${JSON.stringify(q.trim())}` : ''
+      const jql = `project = "${projectKey}"${textClause} ORDER BY updated DESC`
+      const url = `${base}/rest/api/3/search/jql`
       const r = await fetch(url, {
         method: 'POST',
         headers: { Authorization: `Bearer ${accessToken}`, Accept: 'application/json', 'Content-Type': 'application/json' },
@@ -178,7 +200,7 @@ router.get('/issues', async (req, res) => {
         desc: extractDesc(i.fields.description),
       }))
     } else {
-      const url = `https://api.atlassian.com/ex/jira/${cloudId}/rest/api/3/issue/picker?query=${encodeURIComponent(q)}&limit=20`
+      const url = `${base}/rest/api/3/issue/picker?query=${encodeURIComponent(q)}&limit=20`
       const r = await fetch(url, {
         headers: { Authorization: `Bearer ${accessToken}`, Accept: 'application/json' },
       })
@@ -210,7 +232,7 @@ router.get('/fields', async (req, res) => {
   const accessToken = authHeader.replace('Bearer ', '')
 
   try {
-    const r = await fetch(`https://api.atlassian.com/ex/jira/${cloudId}/rest/api/3/field`, {
+    const r = await fetch(`${jiraBase(cloudId)}/rest/api/3/field`, {
       headers: { Authorization: `Bearer ${accessToken}`, Accept: 'application/json' },
     })
     if (r.status === 401) return res.status(401).json({ error: 'unauthorized' })
@@ -239,7 +261,7 @@ router.post('/sync-points', async (req, res) => {
   if (isNaN(numericPoints)) return res.status(400).json({ error: 'points must be numeric' })
 
   try {
-    const r = await fetch(`https://api.atlassian.com/ex/jira/${cloudId}/rest/api/3/issue/${issueKey}`, {
+    const r = await fetch(`${jiraBase(cloudId)}/rest/api/3/issue/${issueKey}`, {
       method: 'PUT',
       headers: {
         Authorization: `Bearer ${accessToken}`,
@@ -258,6 +280,90 @@ router.post('/sync-points', async (req, res) => {
     res.json({ ok: true })
   } catch (err) {
     console.error('Jira sync-points error:', err)
+    res.status(500).json({ error: 'server_error' })
+  }
+})
+
+// GET /api/jira/projects — list accessible projects
+router.get('/projects', async (req, res) => {
+  const { cloudId } = req.query
+  const authHeader = req.headers.authorization
+  if (!authHeader || !cloudId) {
+    return res.status(400).json({ error: 'authorization header and cloudId required' })
+  }
+  const accessToken = authHeader.replace('Bearer ', '')
+  try {
+    const r = await fetch(`${jiraBase(cloudId)}/rest/api/3/project/search?maxResults=50&orderBy=name`, {
+      headers: { Authorization: `Bearer ${accessToken}`, Accept: 'application/json' },
+    })
+    if (r.status === 401) return res.status(401).json({ error: 'unauthorized' })
+    if (!r.ok) return res.status(r.status).json({ error: 'jira_error' })
+    const data = await r.json()
+    const projects = (data.values || []).map(p => ({ key: p.key, name: p.name }))
+    res.json({ projects })
+  } catch (err) {
+    console.error('Jira projects error:', err)
+    res.status(500).json({ error: 'server_error' })
+  }
+})
+
+// GET /api/jira/sprints — list active + future sprints for a project
+router.get('/sprints', async (req, res) => {
+  const { cloudId, projectKey } = req.query
+  const authHeader = req.headers.authorization
+  if (!authHeader || !cloudId || !projectKey) {
+    return res.status(400).json({ error: 'authorization header, cloudId, and projectKey required' })
+  }
+  const accessToken = authHeader.replace('Bearer ', '')
+  const base = jiraBase(cloudId)
+  try {
+    const boardRes = await fetch(
+      `${base}/rest/agile/1.0/board?projectKeyOrId=${encodeURIComponent(projectKey)}&maxResults=50`,
+      { headers: { Authorization: `Bearer ${accessToken}`, Accept: 'application/json' } }
+    )
+    if (boardRes.status === 401) return res.status(401).json({ error: 'unauthorized' })
+    if (!boardRes.ok) return res.json({ sprints: [] })
+    const boards = (await boardRes.json()).values || []
+    const scrumBoard = boards.find(b => b.type === 'scrum')
+    if (!scrumBoard) return res.json({ sprints: [] })
+
+    const sprintRes = await fetch(
+      `${base}/rest/agile/1.0/board/${scrumBoard.id}/sprint?state=active,future&maxResults=50`,
+      { headers: { Authorization: `Bearer ${accessToken}`, Accept: 'application/json' } }
+    )
+    if (!sprintRes.ok) return res.json({ sprints: [] })
+    const sprints = ((await sprintRes.json()).values || []).map(s => ({ id: s.id, name: s.name, state: s.state }))
+    res.json({ sprints })
+  } catch (err) {
+    console.error('Jira sprints error:', err)
+    res.status(500).json({ error: 'server_error' })
+  }
+})
+
+// POST /api/jira/move-to-sprint — assign an issue to a sprint
+router.post('/move-to-sprint', async (req, res) => {
+  const { cloudId, issueKey, sprintId } = req.body
+  const authHeader = req.headers.authorization
+  if (!authHeader || !cloudId || !issueKey || !sprintId) {
+    return res.status(400).json({ error: 'authorization header, cloudId, issueKey, and sprintId required' })
+  }
+  const accessToken = authHeader.replace('Bearer ', '')
+  try {
+    const r = await fetch(`${jiraBase(cloudId)}/rest/agile/1.0/sprint/${sprintId}/issue`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${accessToken}`, Accept: 'application/json', 'Content-Type': 'application/json' },
+      body: JSON.stringify({ issues: [issueKey] }),
+    })
+    if (r.status === 401) return res.status(401).json({ error: 'unauthorized' })
+    if (r.status === 403) return res.status(403).json({ error: 'forbidden' })
+    if (!r.ok) {
+      const errData = await r.json().catch(() => ({}))
+      console.error('Jira move-to-sprint error:', errData)
+      return res.status(r.status).json({ error: 'jira_error' })
+    }
+    res.json({ ok: true })
+  } catch (err) {
+    console.error('Jira move-to-sprint error:', err)
     res.status(500).json({ error: 'server_error' })
   }
 })
