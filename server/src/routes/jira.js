@@ -368,6 +368,71 @@ router.post('/move-to-sprint', async (req, res) => {
   }
 })
 
+// GET /api/jira/statuses — list workflow statuses available in a project
+router.get('/statuses', async (req, res) => {
+  const { cloudId, projectKey } = req.query
+  const authHeader = req.headers.authorization
+  if (!authHeader || !cloudId || !projectKey) {
+    return res.status(400).json({ error: 'authorization header, cloudId, and projectKey required' })
+  }
+  const accessToken = authHeader.replace('Bearer ', '')
+  try {
+    const r = await fetch(`${jiraBase(cloudId)}/rest/api/3/project/${encodeURIComponent(projectKey)}/statuses`, {
+      headers: { Authorization: `Bearer ${accessToken}`, Accept: 'application/json' },
+    })
+    if (r.status === 401) return res.status(401).json({ error: 'unauthorized' })
+    if (!r.ok) return res.status(r.status).json({ error: 'jira_error' })
+    const data = await r.json()
+    const names = new Set()
+    for (const issueType of data || []) {
+      for (const status of issueType.statuses || []) names.add(status.name)
+    }
+    const statuses = [...names].sort().map(name => ({ name }))
+    res.json({ statuses })
+  } catch (err) {
+    console.error('Jira statuses error:', err)
+    res.status(500).json({ error: 'server_error' })
+  }
+})
+
+// POST /api/jira/move-to-status — transition an issue to a target status
+router.post('/move-to-status', async (req, res) => {
+  const { cloudId, issueKey, statusName } = req.body
+  const authHeader = req.headers.authorization
+  if (!authHeader || !cloudId || !issueKey || !statusName) {
+    return res.status(400).json({ error: 'authorization header, cloudId, issueKey, and statusName required' })
+  }
+  const accessToken = authHeader.replace('Bearer ', '')
+  const base = jiraBase(cloudId)
+  try {
+    const transRes = await fetch(`${base}/rest/api/3/issue/${issueKey}/transitions`, {
+      headers: { Authorization: `Bearer ${accessToken}`, Accept: 'application/json' },
+    })
+    if (transRes.status === 401) return res.status(401).json({ error: 'unauthorized' })
+    if (!transRes.ok) return res.status(transRes.status).json({ error: 'jira_error' })
+    const { transitions } = await transRes.json()
+    const match = (transitions || []).find(t => t.to?.name?.toLowerCase() === statusName.toLowerCase())
+    if (!match) return res.status(409).json({ error: 'no_valid_transition' })
+
+    const r = await fetch(`${base}/rest/api/3/issue/${issueKey}/transitions`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${accessToken}`, Accept: 'application/json', 'Content-Type': 'application/json' },
+      body: JSON.stringify({ transition: { id: match.id } }),
+    })
+    if (r.status === 401) return res.status(401).json({ error: 'unauthorized' })
+    if (r.status === 403) return res.status(403).json({ error: 'forbidden' })
+    if (!r.ok) {
+      const errData = await r.json().catch(() => ({}))
+      console.error('Jira move-to-status error:', errData)
+      return res.status(r.status).json({ error: 'jira_error' })
+    }
+    res.json({ ok: true })
+  } catch (err) {
+    console.error('Jira move-to-status error:', err)
+    res.status(500).json({ error: 'server_error' })
+  }
+})
+
 function extractDesc(adf) {
   if (!adf || typeof adf !== 'object') return ''
   const texts = []

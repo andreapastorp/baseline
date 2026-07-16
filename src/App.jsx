@@ -513,11 +513,13 @@ function JiraModal({ onImport, onClose, existingStories = new Map(), onSyncExist
   const [spField, setSpField] = useState(() => getJiraAuth()?.spField ?? null)
   const [project, setProject] = useState(() => getJiraAuth()?.project ?? null)
   const [sprint, setSprint] = useState(() => getJiraAuth()?.sprint ?? null)
-  const [activePicker, setActivePicker] = useState(null) // 'field' | 'project' | 'sprint'
+  const [status, setStatus] = useState(() => getJiraAuth()?.status ?? null)
+  const [activePicker, setActivePicker] = useState(null) // 'field' | 'project' | 'sprint' | 'status'
   const [pickerQuery, setPickerQuery] = useState('')
   const [pickerFields, setPickerFields] = useState([])
   const [pickerProjects, setPickerProjects] = useState([])
   const [pickerSprints, setPickerSprints] = useState([])
+  const [pickerStatuses, setPickerStatuses] = useState([])
   const [pickerLoading, setPickerLoading] = useState(false)
   const modalRef = useModalA11y(onClose)
   const debounceRef = useRef(null)
@@ -536,7 +538,7 @@ function JiraModal({ onImport, onClose, existingStories = new Map(), onSyncExist
     return () => document.removeEventListener('mousedown', handler)
   }, [activePicker])
 
-  const disconnect = () => { saveJiraAuth(null); setAuth(null); setSpField(null); setProject(null); setSprint(null); setIssues([]); setSelected(new Set()); setActivePicker(null) }
+  const disconnect = () => { saveJiraAuth(null); setAuth(null); setSpField(null); setProject(null); setSprint(null); setStatus(null); setIssues([]); setSelected(new Set()); setActivePicker(null) }
 
   const openFieldPicker = async () => {
     setActivePicker('field')
@@ -594,9 +596,11 @@ function JiraModal({ onImport, onClose, existingStories = new Map(), onSyncExist
   const selectProject = (proj) => {
     setProject(proj)
     setSprint(null)
+    setStatus(null)
     setPickerSprints([])
+    setPickerStatuses([])
     const current = getJiraAuth()
-    if (current) saveJiraAuth({ ...current, project: proj, sprint: null })
+    if (current) saveJiraAuth({ ...current, project: proj, sprint: null, status: null })
     setActivePicker(null)
     setPickerQuery('')
   }
@@ -605,8 +609,9 @@ function JiraModal({ onImport, onClose, existingStories = new Map(), onSyncExist
     e.stopPropagation()
     setProject(null)
     setSprint(null)
+    setStatus(null)
     const current = getJiraAuth()
-    if (current) saveJiraAuth({ ...current, project: null, sprint: null })
+    if (current) saveJiraAuth({ ...current, project: null, sprint: null, status: null })
   }
 
   const openSprintPicker = async () => {
@@ -642,6 +647,41 @@ function JiraModal({ onImport, onClose, existingStories = new Map(), onSyncExist
     setSprint(null)
     const current = getJiraAuth()
     if (current) saveJiraAuth({ ...current, sprint: null })
+  }
+
+  const openStatusPicker = async () => {
+    if (!project) return
+    setActivePicker('status')
+    setPickerQuery('')
+    setPickerStatuses([])
+    setPickerLoading(true)
+    try {
+      const fresh = await ensureFreshToken(auth)
+      if (!fresh) { setAuth(null); saveJiraAuth(null); return }
+      setAuth(fresh)
+      const statusParams = new URLSearchParams({ cloudId: fresh.cloudId, projectKey: project.key })
+      if (fresh.cloudUrl) statusParams.set('cloudUrl', fresh.cloudUrl)
+      const res = await fetch(`/api/jira/statuses?${statusParams}`, {
+        headers: { Authorization: `Bearer ${fresh.accessToken}` },
+      })
+      if (res.ok) setPickerStatuses((await res.json()).statuses || [])
+    } catch {}
+    finally { setPickerLoading(false) }
+  }
+
+  const selectStatus = (st) => {
+    setStatus(st)
+    const current = getJiraAuth()
+    if (current) saveJiraAuth({ ...current, status: st })
+    setActivePicker(null)
+    setPickerQuery('')
+  }
+
+  const clearStatus = (e) => {
+    e.stopPropagation()
+    setStatus(null)
+    const current = getJiraAuth()
+    if (current) saveJiraAuth({ ...current, status: null })
   }
 
   const fetchIssues = async (q, currentAuth, currentProject) => {
@@ -852,6 +892,46 @@ function JiraModal({ onImport, onClose, existingStories = new Map(), onSyncExist
                         </button>
                         {sprint && (
                           <button className="jira-sp-clear" onClick={clearSprint}>· clear</button>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                </div>
+                <div className="jira-sp-row">
+                  <span className="jira-sp-label">Status</span>
+                  <div style={{ position: 'relative', flex: 1 }} ref={activePicker === 'status' ? pickerContainerRef : undefined}>
+                    {activePicker === 'status' ? (
+                      <div>
+                        <input
+                          className="input jira-sp-input"
+                          placeholder="Search statuses…"
+                          value={pickerQuery}
+                          onChange={e => setPickerQuery(e.target.value)}
+                          onKeyDown={e => e.key === 'Escape' && setActivePicker(null)}
+                          autoFocus
+                        />
+                        <div className="jira-sp-list">
+                          {pickerLoading && <div className="jira-sp-empty">Loading…</div>}
+                          {!pickerLoading && pickerStatuses.length === 0 && (
+                            <div className="jira-sp-empty">No statuses found — reconnect if this looks wrong.</div>
+                          )}
+                          {pickerStatuses
+                            .filter(s => !pickerQuery || s.name.toLowerCase().includes(pickerQuery.toLowerCase()))
+                            .map(s => (
+                              <button key={s.name} className="jira-sp-option" onClick={() => selectStatus(s)}>
+                                {s.name}
+                              </button>
+                            ))
+                          }
+                        </div>
+                      </div>
+                    ) : (
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                        <button className="jira-sp-value" onClick={openStatusPicker}>
+                          {status ? status.name : 'not set'}
+                        </button>
+                        {status && (
+                          <button className="jira-sp-clear" onClick={clearStatus}>· clear</button>
                         )}
                       </div>
                     )}
@@ -1411,6 +1491,13 @@ function RoomView({ roomName, identity, onLeave }) {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${fresh.accessToken}` },
           body: JSON.stringify({ cloudId: fresh.cloudId, cloudUrl: fresh.cloudUrl, issueKey: jiraKey, sprintId: auth.sprint.id }),
+        }))
+      }
+      if (auth.status?.name) {
+        ops.push(fetch('/api/jira/move-to-status', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${fresh.accessToken}` },
+          body: JSON.stringify({ cloudId: fresh.cloudId, cloudUrl: fresh.cloudUrl, issueKey: jiraKey, statusName: auth.status.name }),
         }))
       }
       const results = await Promise.all(ops)

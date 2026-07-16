@@ -9,7 +9,7 @@ Baseline is a simple and functional multiplayer poker planning tool.
 2. Multiplayer
 3. Vote stats
 4. Observer mode
-4. Jira import
+4. Jira support (import, sync points and move to status or sprint)
 5. Voting history (planned)
 
 ## Development
