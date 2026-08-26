@@ -2065,20 +2065,20 @@ export default function App() {
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search)
-    const accessToken = params.get('jira_access_token')
-    if (!accessToken) return
-    saveJiraAuth({
-      accessToken,
-      refreshToken: params.get('jira_refresh_token'),
-      cloudId: params.get('jira_cloud_id'),
-      cloudUrl: params.get('jira_cloud_url') || null,
-      email: params.get('jira_email'),
-      expiresAt: Number(params.get('jira_expires_at')),
-    })
+    const sessionCode = params.get('jira_session')
+    if (!sessionCode) return
     const clean = new URLSearchParams(window.location.search)
-    ;['jira_access_token', 'jira_refresh_token', 'jira_cloud_id', 'jira_cloud_url', 'jira_email', 'jira_expires_at'].forEach(k => clean.delete(k))
+    clean.delete('jira_session')
     const qs = clean.toString()
     window.history.replaceState({}, '', qs ? `?${qs}` : window.location.pathname)
+
+    fetch('/api/jira/session', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ code: sessionCode }),
+    })
+      .then(res => res.ok ? res.json() : null)
+      .then(auth => { if (auth) saveJiraAuth(auth) })
   }, [])
 
   const [displayName, setDisplayName] = useState(

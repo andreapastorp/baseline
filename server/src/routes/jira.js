@@ -3,6 +3,17 @@ const crypto = require('crypto')
 
 const router = Router()
 
+// Single-use token handoff, keyed by opaque code
+const pendingSessions = new Map()
+const SESSION_TTL_MS = 60 * 1000
+
+function stashSession(payload) {
+  const code = crypto.randomBytes(24).toString('hex')
+  pendingSessions.set(code, { payload, expiresAt: Date.now() + SESSION_TTL_MS })
+  setTimeout(() => pendingSessions.delete(code), SESSION_TTL_MS).unref?.()
+  return code
+}
+
 const JQL_RE = /\b(AND|OR|NOT|ORDER\s+BY|project|sprint|status|assignee|reporter|priority|issuetype|fixVersion|component|label|created|updated|due)\b|[=!~]/i
 
 function isJql(q) {
@@ -100,19 +111,29 @@ router.get('/callback', async (req, res) => {
 
     const expiresAt = Date.now() + expires_in * 1000
 
-    const params = new URLSearchParams({
-      jira_access_token: access_token,
-      jira_refresh_token: refresh_token,
-      jira_cloud_id: cloudId,
-      jira_cloud_url: cloudUrl || '',
-      jira_email: email,
-      jira_expires_at: String(expiresAt),
+    const code = stashSession({
+      accessToken: access_token,
+      refreshToken: refresh_token,
+      cloudId,
+      cloudUrl: cloudUrl || null,
+      email,
+      expiresAt,
     })
-    res.redirect(`${frontendUrl}/?${params}`)
+    res.redirect(`${frontendUrl}/?jira_session=${code}`)
   } catch (err) {
     console.error('Jira callback error:', err)
     res.redirect(`${frontendUrl}/?jira_error=server_error`)
   }
+})
+
+// POST /api/jira/session — exchange a one-time code from the callback redirect for tokens
+router.post('/session', (req, res) => {
+  const { code } = req.body
+  const entry = code && pendingSessions.get(code)
+  if (!entry) return res.status(404).json({ error: 'Session not found or expired' })
+  pendingSessions.delete(code)
+  if (Date.now() > entry.expiresAt) return res.status(404).json({ error: 'Session not found or expired' })
+  res.json(entry.payload)
 })
 
 // POST /api/jira/refresh — refresh access token
