@@ -1,4 +1,5 @@
 const { Router } = require('express')
+const crypto = require('crypto')
 
 const router = Router()
 
@@ -20,10 +21,7 @@ function getConfig() {
 }
 
 function getFrontendOrigin(req) {
-  const ref = req.headers.referer || req.headers.referrer
-  if (ref) {
-    try { return new URL(ref).origin } catch {}
-  }
+  if (process.env.FRONTEND_URL) return process.env.FRONTEND_URL.replace(/\/$/, '')
   return `${req.protocol}://${req.get('host')}`
 }
 
@@ -33,8 +31,7 @@ router.get('/auth', (req, res) => {
   if (!clientId || !redirectUri) {
     return res.status(500).json({ error: 'Jira integration not configured' })
   }
-  const origin = getFrontendOrigin(req)
-  const state = Buffer.from(JSON.stringify({ origin })).toString('base64')
+  const state = crypto.randomBytes(16).toString('hex')
   const params = new URLSearchParams({
     audience: 'api.atlassian.com',
     client_id: clientId,
@@ -49,14 +46,10 @@ router.get('/auth', (req, res) => {
 
 // GET /api/jira/callback — exchange code for tokens, redirect to frontend
 router.get('/callback', async (req, res) => {
-  const { code, error, state } = req.query
+  const { code, error } = req.query
   const { clientId, clientSecret, redirectUri } = getConfig()
 
-  let frontendUrl = `${req.protocol}://${req.get('host')}`
-  try {
-    const decoded = JSON.parse(Buffer.from(state || '', 'base64').toString())
-    if (decoded.origin) frontendUrl = decoded.origin
-  } catch {}
+  const frontendUrl = getFrontendOrigin(req)
 
   if (error) {
     return res.redirect(`${frontendUrl}/?jira_error=${encodeURIComponent(error)}`)
