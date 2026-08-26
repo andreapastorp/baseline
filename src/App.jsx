@@ -88,10 +88,10 @@ async function api(path, options = {}) {
   return res.json()
 }
 
-function getWsUrl(roomName, token) {
+function getWsUrl(roomId, token) {
   const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
   const host = import.meta.env.DEV ? 'localhost:3001' : window.location.host
-  return `${proto}//${host}/ws?room=${encodeURIComponent(roomName)}&token=${encodeURIComponent(token)}`
+  return `${proto}//${host}/ws?room=${encodeURIComponent(roomId)}&token=${encodeURIComponent(token)}`
 }
 
 /* ── Toggle ── */
@@ -1052,10 +1052,10 @@ function AddStoryModal({ onAdd, onClose, onSwitchToJira }) {
 }
 
 /* ── Share Button ── */
-function ShareButton({ roomName }) {
+function ShareButton({ roomId }) {
   const [copied, setCopied] = useState(false)
   const handle = () => {
-    const url = `${window.location.origin}${window.location.pathname}?room=${encodeURIComponent(roomName)}`
+    const url = `${window.location.origin}${window.location.pathname}?room=${encodeURIComponent(roomId)}`
     navigator.clipboard.writeText(url).then(() => {
       setCopied(true)
       setTimeout(() => setCopied(false), 2000)
@@ -1069,13 +1069,13 @@ function ShareButton({ roomName }) {
 }
 
 /* ── Top Bar ── */
-function TopBar({ roomName, me, isVoting, onToggleVoting, onLeave }) {
+function TopBar({ roomId, roomName, me, isVoting, onToggleVoting, onLeave }) {
   return (
     <div className="topbar">
       <div className="topbar-left">
         <button className="btn btn-ghost btn-sm" onClick={onLeave} style={{ marginRight: 4 }} aria-label="Back to lobby">←</button>
         <div className="topbar-room">{roomName}</div>
-        <ShareButton roomName={roomName} />
+        <ShareButton roomId={roomId} />
       </div>
       <div className="topbar-right">
         <Toggle on={!isVoting} onChange={v => onToggleVoting(!v)} label="Observer mode" />
@@ -1138,7 +1138,7 @@ function BottomBar({ phase, me, participants, hasVoted, myVote, onReveal, onClea
 }
 
 /* ── Room View ── */
-function RoomView({ roomName, identity, onLeave }) {
+function RoomView({ roomId, roomName, identity, onLeave }) {
   const { token, participant: me } = identity
 
   const [participants, setParticipants] = useState([me])
@@ -1177,7 +1177,7 @@ function RoomView({ roomName, identity, onLeave }) {
     let retryTimer = null
 
     function connect() {
-      const ws = new WebSocket(getWsUrl(roomName, token))
+      const ws = new WebSocket(getWsUrl(roomId, token))
       wsRef.current = ws
       let didOpen = false
 
@@ -1395,7 +1395,7 @@ function RoomView({ roomName, identity, onLeave }) {
       clearTimeout(retryTimer)
       wsRef.current?.close()
     }
-  }, [roomName, token])
+  }, [roomId, token])
 
   const wsSend = (msg) => {
     if (wsRef.current?.readyState === WebSocket.OPEN) {
@@ -1554,7 +1554,7 @@ function RoomView({ roomName, identity, onLeave }) {
 
   const handleAddStory = async ({ title, desc }) => {
     try {
-      await api(`/rooms/${encodeURIComponent(roomName)}/stories`, {
+      await api(`/rooms/${encodeURIComponent(roomId)}/stories`, {
         method: 'POST',
         body: { title, desc },
       })
@@ -1565,7 +1565,7 @@ function RoomView({ roomName, identity, onLeave }) {
 
   const handleImportJira = async (issues) => {
     try {
-      await api(`/rooms/${encodeURIComponent(roomName)}/stories/batch`, {
+      await api(`/rooms/${encodeURIComponent(roomId)}/stories/batch`, {
         method: 'POST',
         body: issues.map(i => ({ title: i.title, desc: i.desc, jiraKey: i.key })),
       })
@@ -1577,7 +1577,7 @@ function RoomView({ roomName, identity, onLeave }) {
 
   const handleSyncJiraStory = async (storyId, title, desc) => {
     try {
-      await api(`/rooms/${encodeURIComponent(roomName)}/stories/${storyId}`, {
+      await api(`/rooms/${encodeURIComponent(roomId)}/stories/${storyId}`, {
         method: 'PATCH',
         body: { title, desc },
       })
@@ -1587,7 +1587,7 @@ function RoomView({ roomName, identity, onLeave }) {
   const handleRemoveStory = async (storyId) => {
     if (!me.isFacilitator) return
     try {
-      await api(`/rooms/${encodeURIComponent(roomName)}/stories/${storyId}`, { method: 'DELETE' })
+      await api(`/rooms/${encodeURIComponent(roomId)}/stories/${storyId}`, { method: 'DELETE' })
     } catch (err) {
       console.error('Failed to remove story:', err)
     }
@@ -1676,7 +1676,7 @@ function RoomView({ roomName, identity, onLeave }) {
   if (!currentStory) {
     return (
       <>
-        <TopBar roomName={roomName} me={me}
+        <TopBar roomId={roomId} roomName={roomName} me={me}
           isVoting={isVoting} onToggleVoting={handleToggleObserver} onLeave={onLeave} />
         <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column', gap: 12 }}>
           <div style={{ color: 'var(--muted)', fontSize: 13 }}>No stories yet.</div>
@@ -1705,7 +1705,7 @@ function RoomView({ roomName, identity, onLeave }) {
 
   return (
     <>
-      <TopBar roomName={roomName} me={me}
+      <TopBar roomId={roomId} roomName={roomName} me={me}
         isVoting={isVoting} onToggleVoting={handleToggleObserver} onLeave={onLeave} />
       <div style={{ flex: 1, display: 'flex', overflow: 'hidden' }}>
         <StorySidebar stories={stories} currentIdx={currentIdx}
@@ -1789,17 +1789,17 @@ function LandingView({ displayName, onDisplayNameChange, onCreateRoom, onJoined 
   const [loading, setLoading] = useState(false)
 
   const handleJoin = async () => {
-    let roomName = joinInput.trim()
-    try { roomName = new URL(roomName).searchParams.get('room') || roomName } catch { /* not a URL */ }
-    if (!roomName || !displayName.trim()) return
+    let roomId = joinInput.trim()
+    try { roomId = new URL(roomId).searchParams.get('room') || roomId } catch { /* not a URL */ }
+    if (!roomId || !displayName.trim()) return
     setLoading(true)
     setError(null)
     try {
-      const data = await api(`/rooms/${encodeURIComponent(roomName)}/join`, {
+      const data = await api(`/rooms/${encodeURIComponent(roomId)}/join`, {
         method: 'POST',
         body: { displayName: displayName.trim() },
       })
-      onJoined({ roomName: data.room.name, identity: { token: data.token, participant: data.participant } })
+      onJoined({ roomId: data.room.id, roomName: data.room.name, identity: { token: data.token, participant: data.participant } })
     } catch (err) {
       setError(err.message)
     } finally {
@@ -1824,7 +1824,7 @@ function LandingView({ displayName, onDisplayNameChange, onCreateRoom, onJoined 
             Create Room
           </button>
           <div style={{ display: 'flex', gap: 8 }}>
-            <input className="input" placeholder="Paste invite link or room name…" style={{ flex: 1 }}
+            <input className="input" placeholder="Paste invite link…" style={{ flex: 1 }}
               value={joinInput} onChange={e => setJoinInput(e.target.value)}
               onKeyDown={e => e.key === 'Enter' && handleJoin()} />
             <button className="btn btn-ghost"
@@ -1841,7 +1841,7 @@ function LandingView({ displayName, onDisplayNameChange, onCreateRoom, onJoined 
 }
 
 /* ── Join view (invite link) ── */
-function JoinView({ roomName, displayName, onDisplayNameChange, onJoined, onBack }) {
+function JoinView({ roomId, displayName, onDisplayNameChange, onJoined, onBack }) {
   const [error, setError] = useState(null)
   const [loading, setLoading] = useState(false)
 
@@ -1850,11 +1850,11 @@ function JoinView({ roomName, displayName, onDisplayNameChange, onJoined, onBack
     setLoading(true)
     setError(null)
     try {
-      const data = await api(`/rooms/${encodeURIComponent(roomName)}/join`, {
+      const data = await api(`/rooms/${encodeURIComponent(roomId)}/join`, {
         method: 'POST',
         body: { displayName: displayName.trim() },
       })
-      onJoined({ roomName: data.room.name, identity: { token: data.token, participant: data.participant } })
+      onJoined({ roomId: data.room.id, roomName: data.room.name, identity: { token: data.token, participant: data.participant } })
     } catch (err) {
       setError(err.message)
     } finally {
@@ -1866,7 +1866,7 @@ function JoinView({ roomName, displayName, onDisplayNameChange, onJoined, onBack
     <div className="landing">
       <div className="landing-inner">
         <h1 className="landing-heading"><em>Baseline</em></h1>
-        <p className="landing-sub">You've been invited to <strong>{roomName}</strong>.</p>
+        <p className="landing-sub">You've been invited to a planning session.</p>
         <div className="landing-actions">
           <div>
             <label className="field-label">Your name</label>
@@ -1906,7 +1906,7 @@ function CreateRoomView({ displayName: initialName, onDisplayNameChange, onCreat
         body: { name: roomName.trim(), displayName: displayName.trim() },
       })
       onDisplayNameChange(displayName.trim())
-      onCreated({ roomName: data.room.name, identity: { token: data.token, participant: data.participant } })
+      onCreated({ roomId: data.room.id, roomName: data.room.name, identity: { token: data.token, participant: data.participant } })
     } catch (err) {
       setError(err.message)
     } finally {
@@ -1957,7 +1957,7 @@ function CreateRoomView({ displayName: initialName, onDisplayNameChange, onCreat
 }
 
 /* ── Add stories view ── */
-function AddStoriesView({ roomName, onStart }) {
+function AddStoriesView({ roomId, roomName, onStart }) {
   const [stories, setStories]   = useState([])
   const [newTitle, setNewTitle] = useState('')
   const [newDesc, setNewDesc]   = useState('')
@@ -1975,7 +1975,7 @@ function AddStoriesView({ roomName, onStart }) {
     setLoading(true)
     try {
       if (stories.length > 0) {
-        await api(`/rooms/${encodeURIComponent(roomName)}/stories/batch`, {
+        await api(`/rooms/${encodeURIComponent(roomId)}/stories/batch`, {
           method: 'POST',
           body: stories.map(s => ({ title: s.title, desc: s.desc, jiraKey: s.jiraKey })),
         })
@@ -2059,7 +2059,7 @@ function AddStoriesView({ roomName, onStart }) {
 
 /* ── Root App ── */
 export default function App() {
-  const [inviteRoom, setInviteRoom] = useState(
+  const [inviteRoomId, setInviteRoomId] = useState(
     () => new URLSearchParams(window.location.search).get('room')
   )
 
@@ -2095,14 +2095,17 @@ export default function App() {
     if (identity) return 'room'
     return savedView || 'landing'
   })
-  const [roomName, setRoomName] = useState(() => {
+  const [roomId, setRoomId] = useState(() => {
     const invite = new URLSearchParams(window.location.search).get('room')
     if (invite) return invite
-    return identity?.roomName || localStorage.getItem(LS_KEY + '_room') || ''
+    return identity?.roomId || localStorage.getItem(LS_KEY + '_room') || ''
   })
+  const [roomName, setRoomName] = useState(
+    () => identity?.roomName || localStorage.getItem(LS_KEY + '_roomLabel') || ''
+  )
 
   const handleClearInvite = () => {
-    setInviteRoom(null)
+    setInviteRoomId(null)
     window.history.pushState({}, '', window.location.pathname)
   }
 
@@ -2112,23 +2115,26 @@ export default function App() {
 
   useEffect(() => {
     localStorage.setItem(LS_KEY + '_view', view)
-    localStorage.setItem(LS_KEY + '_room', roomName)
-  }, [view, roomName])
+    localStorage.setItem(LS_KEY + '_room', roomId)
+    localStorage.setItem(LS_KEY + '_roomLabel', roomName)
+  }, [view, roomId, roomName])
 
   useEffect(() => {
     if (identity) localStorage.setItem(LS_KEY_IDENTITY, JSON.stringify(identity))
     else localStorage.removeItem(LS_KEY_IDENTITY)
   }, [identity])
 
-  const handleCreated = ({ roomName: name, identity: id }) => {
+  const handleCreated = ({ roomId: id, roomName: name, identity: idn }) => {
+    setRoomId(id)
     setRoomName(name)
-    setIdentity({ ...id, roomName: name })
+    setIdentity({ ...idn, roomId: id, roomName: name })
     setView('stories')
   }
 
-  const handleJoined = ({ roomName: name, identity: id }) => {
+  const handleJoined = ({ roomId: id, roomName: name, identity: idn }) => {
+    setRoomId(id)
     setRoomName(name)
-    setIdentity({ ...id, roomName: name })
+    setIdentity({ ...idn, roomId: id, roomName: name })
     setView('room')
   }
 
@@ -2136,15 +2142,15 @@ export default function App() {
 
   return (
     <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-      {view === 'landing' && inviteRoom && (
+      {view === 'landing' && inviteRoomId && (
         <JoinView
-          roomName={inviteRoom}
+          roomId={inviteRoomId}
           displayName={displayName}
           onDisplayNameChange={setDisplayName}
           onJoined={handleJoined}
           onBack={handleClearInvite} />
       )}
-      {view === 'landing' && !inviteRoom && (
+      {view === 'landing' && !inviteRoomId && (
         <LandingView
           displayName={displayName}
           onDisplayNameChange={setDisplayName}
@@ -2160,11 +2166,13 @@ export default function App() {
       )}
       {view === 'stories' && identity && (
         <AddStoriesView
+          roomId={roomId}
           roomName={roomName}
           onStart={handleStart} />
       )}
       {view === 'room' && identity && (
         <RoomView
+          roomId={roomId}
           roomName={roomName}
           identity={identity}
           onLeave={() => setView('landing')} />

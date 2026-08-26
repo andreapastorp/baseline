@@ -25,12 +25,12 @@ async function nextPosition(roomId) {
   return last ? last.position + 1 : 0
 }
 
-// POST /api/rooms/:name/stories
+// POST /api/rooms/:roomId/stories
 router.post('/', async (req, res) => {
   const { title, desc = '' } = req.body
   if (!title) return res.status(400).json({ error: 'title is required' })
 
-  const room = await db.room.findUnique({ where: { name: req.params.name } })
+  const room = await db.room.findUnique({ where: { id: req.params.roomId } })
   if (!room) return res.status(404).json({ error: 'Room not found' })
 
   const position = await nextPosition(room.id)
@@ -39,18 +39,18 @@ router.post('/', async (req, res) => {
     include: { votes: true },
   })
 
-  broadcastToRoom(room.name, { type: 'story:added', story: storyShape(story) })
+  broadcastToRoom(room.id, { type: 'story:added', story: storyShape(story) })
   res.json({ story: storyShape(story) })
 })
 
-// POST /api/rooms/:name/stories/batch
+// POST /api/rooms/:roomId/stories/batch
 router.post('/batch', async (req, res) => {
   const items = req.body
   if (!Array.isArray(items) || items.length === 0) {
     return res.status(400).json({ error: 'body must be a non-empty array' })
   }
 
-  const room = await db.room.findUnique({ where: { name: req.params.name } })
+  const room = await db.room.findUnique({ where: { id: req.params.roomId } })
   if (!room) return res.status(404).json({ error: 'Room not found' })
 
   let position = await nextPosition(room.id)
@@ -62,18 +62,18 @@ router.post('/batch', async (req, res) => {
       include: { votes: true },
     })
     stories.push(storyShape(story))
-    broadcastToRoom(room.name, { type: 'story:added', story: storyShape(story) })
+    broadcastToRoom(room.id, { type: 'story:added', story: storyShape(story) })
   }
 
   res.json({ stories })
 })
 
-// PATCH /api/rooms/:name/stories/:id — refresh title/desc (e.g. when Jira drifts from the stored copy)
+// PATCH /api/rooms/:roomId/stories/:id — refresh title/desc (e.g. when Jira drifts from the stored copy)
 router.patch('/:id', async (req, res) => {
   const { id } = req.params
   const { title, desc } = req.body
 
-  const room = await db.room.findUnique({ where: { name: req.params.name } })
+  const room = await db.room.findUnique({ where: { id: req.params.roomId } })
   if (!room) return res.status(404).json({ error: 'Room not found' })
 
   const story = await db.story.findFirst({ where: { id, roomId: room.id } })
@@ -88,15 +88,15 @@ router.patch('/:id', async (req, res) => {
     include: { votes: true },
   })
 
-  broadcastToRoom(room.name, { type: 'story:updated', storyId: id, title: updated.title, desc: updated.desc })
+  broadcastToRoom(room.id, { type: 'story:updated', storyId: id, title: updated.title, desc: updated.desc })
   res.json({ story: storyShape(updated) })
 })
 
-// DELETE /api/rooms/:name/stories/:id
+// DELETE /api/rooms/:roomId/stories/:id
 router.delete('/:id', async (req, res) => {
   const { id } = req.params
 
-  const room = await db.room.findUnique({ where: { name: req.params.name } })
+  const room = await db.room.findUnique({ where: { id: req.params.roomId } })
   if (!room) return res.status(404).json({ error: 'Room not found' })
 
   const story = await db.story.findFirst({ where: { id, roomId: room.id } })
@@ -104,7 +104,7 @@ router.delete('/:id', async (req, res) => {
 
   await db.story.delete({ where: { id } })
 
-  broadcastToRoom(room.name, { type: 'story:removed', storyId: id })
+  broadcastToRoom(room.id, { type: 'story:removed', storyId: id })
   res.json({ ok: true })
 })
 

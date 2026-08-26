@@ -2,20 +2,20 @@ const { WebSocketServer } = require('ws')
 const { parse } = require('url')
 const db = require('./db')
 
-// roomName → Set<WebSocket>
+// roomId → Set<WebSocket>
 const rooms = new Map()
 
-// ws → { participantId, roomName, isFacilitator }
+// ws → { participantId, roomId, isFacilitator }
 const clients = new Map()
 
 // participantId → Set<WebSocket> (all active connections for this participant)
 const participantConnections = new Map()
 
-// roomName → storyId (facilitator's current story, ephemeral)
+// roomId → storyId (facilitator's current story, ephemeral)
 const facilitatorFocus = new Map()
 
-function broadcastToRoom(roomName, message, exclude = null) {
-  const sockets = rooms.get(roomName)
+function broadcastToRoom(roomId, message, exclude = null) {
+  const sockets = rooms.get(roomId)
   if (!sockets) return
   const data = JSON.stringify(message)
   for (const ws of sockets) {
@@ -47,9 +47,9 @@ function storyShape(s) {
   }
 }
 
-async function getRoomSnapshot(roomName, connectedParticipantIds) {
+async function getRoomSnapshot(roomId, connectedParticipantIds) {
   const room = await db.room.findUnique({
-    where: { name: roomName },
+    where: { id: roomId },
     include: {
       stories: { include: { votes: { include: { participant: true } } } },
       participants: true,
@@ -59,7 +59,7 @@ async function getRoomSnapshot(roomName, connectedParticipantIds) {
   return {
     id: room.id,
     name: room.name,
-    facilitatorStoryId: facilitatorFocus.get(roomName) ?? null,
+    facilitatorStoryId: facilitatorFocus.get(roomId) ?? null,
     stories: room.stories
       .sort((a, b) => a.position - b.position)
       .map(storyShape),
@@ -91,9 +91,9 @@ function setup(server) {
     ws.isAlive = true
     ws.on('pong', () => { ws.isAlive = true })
     const { query } = parse(req.url, true)
-    const { room: roomName, token } = query
+    const { room: roomId, token } = query
 
-    if (!roomName || !token) {
+    if (!roomId || !token) {
       ws.close(4001, 'room and token required')
       return
     }
@@ -104,15 +104,15 @@ function setup(server) {
       include: { room: true },
     })
 
-    if (!participant || participant.room.name !== roomName) {
+    if (!participant || participant.room.id !== roomId) {
       ws.close(4003, 'invalid token')
       return
     }
 
     // Register client
-    if (!rooms.has(roomName)) rooms.set(roomName, new Set())
-    rooms.get(roomName).add(ws)
-    clients.set(ws, { participantId: participant.id, roomName, isFacilitator: participant.isFacilitator })
+    if (!rooms.has(roomId)) rooms.set(roomId, new Set())
+    rooms.get(roomId).add(ws)
+    clients.set(ws, { participantId: participant.id, roomId, isFacilitator: participant.isFacilitator })
 
     // Track per-participant connections to distinguish "first connection" from "additional tab"
     if (!participantConnections.has(participant.id)) participantConnections.set(participant.id, new Set())
@@ -122,19 +122,19 @@ function setup(server) {
 
     // Build set of currently-connected participant IDs (including the one just added)
     const connectedIds = new Set()
-    for (const sock of rooms.get(roomName)) {
+    for (const sock of rooms.get(roomId)) {
       const info = clients.get(sock)
       if (info) connectedIds.add(info.participantId)
     }
 
     // Send full room state with only online participants
-    const snapshot = await getRoomSnapshot(roomName, connectedIds)
+    const snapshot = await getRoomSnapshot(roomId, connectedIds)
     send(ws, { type: 'room:state', room: snapshot })
 
     // Only announce join when transitioning from offline → online (not for extra tabs or reconnects
     // where the old socket hasn't closed yet)
     if (wasOffline) {
-      broadcastToRoom(roomName, {
+      broadcastToRoom(roomId, {
         type: 'participant:joined',
         participant: { id: participant.id, name: participant.name, role: participant.role, isFacilitator: participant.isFacilitator },
       }, ws)
@@ -144,7 +144,7 @@ function setup(server) {
       let msg
       try { msg = JSON.parse(raw) } catch { return }
 
-      const { participantId, roomName } = clients.get(ws) || {}
+      const { participantId, roomId } = clients.get(ws) || {}
       if (!participantId) return
 
       const p = await db.participant.findUnique({ where: { id: participantId } })
@@ -159,7 +159,7 @@ function setup(server) {
           if (value === null) {
             // Clear vote
             await db.vote.deleteMany({ where: { storyId, participantId } })
-            broadcastToRoom(roomName, { type: 'vote:cast', storyId, participantId, hasVoted: false }, ws)
+            broadcastToRoom(roomId, { type: 'vote:cast', storyId, participantId, hasVoted: false }, ws)
             send(ws, { type: 'vote:cast', storyId, participantId, hasVoted: false })
           } else {
             // Upsert vote
@@ -169,7 +169,7 @@ function setup(server) {
               create: { storyId, participantId, value: String(value) },
             })
             // Broadcast that this participant has voted (value hidden)
-            broadcastToRoom(roomName, { type: 'vote:cast', storyId, participantId, hasVoted: true }, ws)
+            broadcastToRoom(roomId, { type: 'vote:cast', storyId, participantId, hasVoted: true }, ws)
             // Echo back to voter
             send(ws, { type: 'vote:cast', storyId, participantId, hasVoted: true })
           }
@@ -188,7 +188,7 @@ function setup(server) {
             include: { participant: true },
           })
 
-          broadcastToRoom(roomName, {
+          broadcastToRoom(roomId, {
             type: 'vote:reveal',
             storyId,
             votes: votes.map(v => ({ participantId: v.participantId, participantName: v.participant.name, value: v.value })),
@@ -213,9 +213,9 @@ function setup(server) {
             orderBy: { position: 'asc' },
           })
 
-          if (next) facilitatorFocus.set(roomName, next.id)
+          if (next) facilitatorFocus.set(roomId, next.id)
 
-          broadcastToRoom(roomName, {
+          broadcastToRoom(roomId, {
             type: 'story:agreed',
             storyId,
             score: String(score),
@@ -232,7 +232,7 @@ function setup(server) {
           await db.vote.deleteMany({ where: { storyId } })
           await db.story.update({ where: { id: storyId }, data: { phase: 'voting', points: null } })
 
-          broadcastToRoom(roomName, { type: 'story:reset', storyId })
+          broadcastToRoom(roomId, { type: 'story:reset', storyId })
           break
         }
 
@@ -242,7 +242,7 @@ function setup(server) {
 
           await db.participant.update({ where: { id: participantId }, data: { role } })
 
-          broadcastToRoom(roomName, { type: 'observer:toggled', participantId, role })
+          broadcastToRoom(roomId, { type: 'observer:toggled', participantId, role })
           break
         }
 
@@ -255,7 +255,7 @@ function setup(server) {
             db.story.update({ where: { id }, data: { position: i } })
           ))
 
-          broadcastToRoom(roomName, { type: 'story:reorder', storyIds }, ws)
+          broadcastToRoom(roomId, { type: 'story:reorder', storyIds }, ws)
           break
         }
 
@@ -263,8 +263,8 @@ function setup(server) {
           if (!p.isFacilitator) return
           const { storyId } = msg
           if (!storyId) return
-          facilitatorFocus.set(roomName, storyId)
-          broadcastToRoom(roomName, { type: 'facilitator:focus', storyId }, ws)
+          facilitatorFocus.set(roomId, storyId)
+          broadcastToRoom(roomId, { type: 'facilitator:focus', storyId }, ws)
           break
         }
       }
@@ -273,13 +273,13 @@ function setup(server) {
     ws.on('close', () => {
       const info = clients.get(ws)
       if (info) {
-        const { participantId, roomName, isFacilitator } = info
+        const { participantId, roomId, isFacilitator } = info
         clients.delete(ws)
 
-        const sockets = rooms.get(roomName)
+        const sockets = rooms.get(roomId)
         if (sockets) {
           sockets.delete(ws)
-          if (sockets.size === 0) rooms.delete(roomName)
+          if (sockets.size === 0) rooms.delete(roomId)
         }
 
         // Only announce departure when this was the participant's last connection
@@ -289,10 +289,10 @@ function setup(server) {
           if (pConns.size === 0) {
             participantConnections.delete(participantId)
             if (isFacilitator) {
-              facilitatorFocus.delete(roomName)
-              broadcastToRoom(roomName, { type: 'facilitator:focus', storyId: null })
+              facilitatorFocus.delete(roomId)
+              broadcastToRoom(roomId, { type: 'facilitator:focus', storyId: null })
             }
-            broadcastToRoom(roomName, { type: 'participant:left', participantId })
+            broadcastToRoom(roomId, { type: 'participant:left', participantId })
           }
         }
       }

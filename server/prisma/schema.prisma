@@ -8,8 +8,8 @@ datasource db {
 }
 
 model Room {
-  id           String        @id @default(cuid())
-  name         String        @unique
+  id           String        @id @default(uuid())
+  name         String
   createdAt    DateTime      @default(now())
   stories      Story[]
   participants Participant[]

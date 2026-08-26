@@ -42,11 +42,6 @@ router.post('/', async (req, res) => {
     return res.status(400).json({ error: 'name and displayName are required' })
   }
 
-  const existing = await db.room.findUnique({ where: { name } })
-  if (existing) {
-    return res.status(409).json({ error: 'Room name already taken' })
-  }
-
   const token = randomUUID()
   const room = await db.room.create({
     data: {
@@ -62,23 +57,23 @@ router.post('/', async (req, res) => {
   res.json({ room: roomSnapshot(room), participant: { id: participant.id, name: participant.name, role: participant.role, isFacilitator: participant.isFacilitator }, token })
 })
 
-// GET /api/rooms/:name — full room snapshot (no auth needed for read)
-router.get('/:name', async (req, res) => {
+// GET /api/rooms/:roomId — full room snapshot (no auth needed for read; roomId is the unguessable join secret)
+router.get('/:roomId', async (req, res) => {
   const room = await db.room.findUnique({
-    where: { name: req.params.name },
+    where: { id: req.params.roomId },
     include: ROOM_INCLUDE,
   })
   if (!room) return res.status(404).json({ error: 'Room not found' })
   res.json({ room: roomSnapshot(room) })
 })
 
-// POST /api/rooms/:name/join — join an existing room
-router.post('/:name/join', async (req, res) => {
+// POST /api/rooms/:roomId/join — join an existing room
+router.post('/:roomId/join', async (req, res) => {
   const { displayName } = req.body
   if (!displayName) return res.status(400).json({ error: 'displayName is required' })
 
   const room = await db.room.findUnique({
-    where: { name: req.params.name },
+    where: { id: req.params.roomId },
     include: ROOM_INCLUDE,
   })
   if (!room) return res.status(404).json({ error: 'Room not found' })
@@ -109,6 +104,6 @@ router.post('/:name/join', async (req, res) => {
   })
 })
 
-router.use('/:name/stories', storiesRouter)
+router.use('/:roomId/stories', storiesRouter)
 
 module.exports = router
