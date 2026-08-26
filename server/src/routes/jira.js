@@ -111,7 +111,7 @@ router.get('/callback', async (req, res) => {
 
     const expiresAt = Date.now() + expires_in * 1000
 
-    const code = stashSession({
+    const sessionCode = stashSession({
       accessToken: access_token,
       refreshToken: refresh_token,
       cloudId,
@@ -119,7 +119,7 @@ router.get('/callback', async (req, res) => {
       email,
       expiresAt,
     })
-    res.redirect(`${frontendUrl}/?jira_session=${code}`)
+    res.redirect(`${frontendUrl}/?jira_session=${sessionCode}`)
   } catch (err) {
     console.error('Jira callback error:', err)
     res.redirect(`${frontendUrl}/?jira_error=server_error`)
